@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { publicFetch } from '../services/publicFetch'
 
 export function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
@@ -11,7 +12,7 @@ export function ForgotPasswordPage() {
     e.preventDefault()
     setErr(null)
     try {
-      const r = await fetch('/api/auth/forgot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) })
+      const r = await publicFetch('/api/auth/forgot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) })
       const j = await r.json().catch(() => ({}))
       if (!r.ok) { setErr(j.detail || 'Failed'); return }
       setDone(true)

@@ -11,7 +11,7 @@ export function ProfilePage() {
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
-    fetch('/api/health').then(r => r.json()).then(setHealth).catch(() => setHealth({ status: 'unknown' }))
+    authFetch('/api/health').then(r => r.json()).then(setHealth).catch(() => setHealth({ status: 'unknown' }))
     authFetch('/api/admin/sports').then(r => r.json()).then(d => setSports(d.sports || [])).catch(() => {})
     authFetch('/api/settings/profile').then(r => { if (r.ok) return r.json() }).then(d => { if (d) setProfile(d) }).catch(() => {})
   }, [])

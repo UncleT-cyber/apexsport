@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useSearchParams, Link, useNavigate } from 'react-router-dom'
+import { publicFetch } from '../services/publicFetch'
 
 export function ResetPasswordPage() {
   const [params] = useSearchParams()
@@ -13,7 +14,7 @@ export function ResetPasswordPage() {
     e.preventDefault()
     setErr(null)
     try {
-      const r = await fetch('/api/auth/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, new_password: pw }) })
+      const r = await publicFetch('/api/auth/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, new_password: pw }) })
       const j = await r.json().catch(() => ({}))
       if (!r.ok) { setErr(j.detail || 'Reset failed'); return }
       setDone(true)

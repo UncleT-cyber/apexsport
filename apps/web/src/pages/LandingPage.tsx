@@ -1,20 +1,9 @@
 import { useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
+import { publicFetch } from '../services/publicFetch'
 
 type Fixture = { id: string; label: string; home: string; away: string; competition: string; kickoff_at: string; status: string; sport: string }
 type NewsArticle = { id: string; sport: string; league?: string; fixture_id?: string; title: string; summary?: string; image_url?: string; published_at: string; source: string; source_url?: string; type?: string }
-
-function getApiBase(): string {
-  const envBase = (import.meta as any).env?.VITE_API_URL
-  if (envBase) return envBase.replace(/\/$/, '')
-  return ''
-}
-
-function apiFetch(path: string): Promise<Response> {
-  const base = getApiBase()
-  const url = base ? `${base}${path}` : path
-  return fetch(url)
-}
 
 export function LandingPage() {
   const nav = useNavigate()
@@ -29,14 +18,14 @@ export function LandingPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const r = await apiFetch('/api/fixtures?sport=football')
+        const r = await publicFetch('/api/fixtures?sport=football')
         if (r.ok) {
           const j = await r.json()
           setFixtures((j.fixtures || []).slice(0, 6))
         }
       } catch {}
       try {
-        const r = await apiFetch('/api/live?sport=football')
+        const r = await publicFetch('/api/live?sport=football')
         if (r.ok) {
           const j = await r.json()
           setLive((j.live || j.fixtures || []).slice(0, 4))
@@ -44,7 +33,7 @@ export function LandingPage() {
       } catch {}
       // News via canonical provider abstraction
       try {
-        const r = await apiFetch('/api/news?sport=football')
+        const r = await publicFetch('/api/news?sport=football')
         if (r.ok) {
           const j = await r.json()
           const list: NewsArticle[] = (j.news || []).map((n: any) => ({
