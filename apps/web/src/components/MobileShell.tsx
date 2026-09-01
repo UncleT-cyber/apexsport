@@ -26,7 +26,7 @@ export function MobileShell() {
   const navHook = useNavigate()
   const loc = useLocation()
   const { connected: wsConnected } = useWebSocket()
-  const { data: health } = usePolling(() => fetch('/health').then(r => r.json().catch(() => null)), 5000)
+  const { data: health } = usePolling(() => import('../services/auth').then(m => m.authFetch('/health').then(r => r.json().catch(() => null))), 5000)
   const connected = wsConnected || !!health
 
   useEffect(() => {
@@ -168,18 +168,33 @@ function LazyLoadPage({ page }: { page: string }) {
   return <Component />
 }
 
-/* ── Mobile Dashboard ── */
+/* ── Mobile Dashboard — full feature parity ── */
 function DashboardMobile() {
   const [sport, setSport] = useState<'football' | 'basketball'>('football')
+  const [activeFixtureId, setActiveFixtureId] = useState('')
+  const [selectedPred, setSelectedPred] = useState<any>(null)
+  const [inspectorId, setInspectorId] = useState<string | null>(null)
+  const [fixtureSheetOpen, setFixtureSheetOpen] = useState(false)
+  const [predDetailOpen, setPredDetailOpen] = useState(false)
+  const [telemetryOpen, setTelemetryOpen] = useState(false)
+  const { add: slipAdd, has: slipHas, remove: slipRemove } = useSlipCart()
+
   const { data: scanner } = usePolling(() => import('../services/auth').then(m => m.authFetch(`/api/scanner/state?sport=${sport}`).then(r => r.json().catch(() => null))), 3000)
-  const { data: predsData } = usePolling(() => import('../services/auth').then(m => m.authFetch(`/api/predictions?sport=${sport}&limit=10`).then(r => r.json().catch(() => null))), 4000)
+  const { data: predsData } = usePolling(() => import('../services/auth').then(m => m.authFetch(`/api/predictions?sport=${sport}&limit=50`).then(r => r.json().catch(() => null))), 4000)
   const { data: calib } = usePolling(() => import('../services/auth').then(m => m.authFetch(`/api/analytics/calibration?sport=${sport}`).then(r => r.json().catch(() => null))), 6000)
   const { data: live } = usePolling(() => import('../services/auth').then(m => m.authFetch(`/api/live?sport=${sport}`).then(r => r.json().catch(() => null))), 5000)
+  const { data: fixturesData } = usePolling(() => import('../services/auth').then(m => m.authFetch(`/api/fixtures?sport=${sport}`).then(r => r.json().catch(() => null))), 10000)
+  const { data: slipsOdds } = usePolling(() => import('../services/auth').then(m => m.authFetch(`/api/slips/odds?sport=${sport}`).then(r => r.json().catch(() => null))), 10000)
+  const { data: brain } = usePolling(() => import('../services/auth').then(m => m.authFetch('/api/brain/status').then(r => r.json().catch(() => null))), 5000)
+  const { data: providers } = usePolling(() => import('../services/auth').then(m => m.authFetch('/api/providers/health').then(r => r.json().catch(() => null))), 8000)
 
   const scannerState: any = scanner
-  const predictions: any[] = predsData?.predictions || scannerState?.recent_predictions || []
+  const fixtures: any[] = fixturesData?.fixtures || []
+  const predictions: any[] = (predsData?.predictions && predsData.predictions.length > 0 ? predsData.predictions : (scannerState?.recent_predictions || []))
   const liveFixtures: any[] = live?.live || []
   const isScanning = !!scannerState?.is_scanning
+  const activePred = selectedPred || predictions[0] || null
+  const activeFixtureObj = fixtures.find((f: any) => f.id === activeFixtureId) || fixtures[0]
 
   const toggleScan = async () => {
     if (isScanning) return
@@ -187,14 +202,39 @@ function DashboardMobile() {
     await authFetch(`/api/scanner/scan-now?sport=${sport}`, { method: 'POST' })
   }
 
+  const handleEvent = useCallback((e: any) => {
+    const t = e.event_type || e.event || ''
+    if (t === 'PREDICTION_CREATED' || t === 'SCANNER_PREDICTION_GENERATED') {
+      setSelectedPred(e.data)
+    }
+  }, [])
+  useWebSocket(handleEvent)
+
   return (
     <div className="p-4 space-y-4">
-      {/* Sport selector */}
+      {/* ── Status bar: connection + scanner ── */}
+      <div className="flex items-center gap-2 text-[10px]">
+        <span className={clsx('flex items-center gap-1 px-2 py-0.5 rounded-full border', isScanning ? 'bg-emerald-900/20 border-emerald-800/30 text-emerald-400 animate-pulse' : 'bg-[var(--bg-secondary)] border-[var(--border)] text-gray-500')}>
+          {isScanning ? '● SCANNING' : 'IDLE'}
+        </span>
+        {scannerState?.predictions_generated > 0 && (
+          <span className="px-2 py-0.5 rounded-full bg-[var(--bg-secondary)] border border-[var(--border)] text-gray-500">
+            {scannerState.predictions_generated} predictions
+          </span>
+        )}
+        {liveFixtures.length > 0 && (
+          <span className="px-2 py-0.5 rounded-full bg-red-900/20 border border-red-800/30 text-red-400">
+            {liveFixtures.length} live
+          </span>
+        )}
+      </div>
+
+      {/* ── Sport selector + Scan ── */}
       <div className="flex items-center gap-2">
         {['football', 'basketball'].map(s => (
           <button
             key={s}
-            onClick={() => setSport(s as any)}
+            onClick={() => { setSport(s as any); setSelectedPred(null); setActiveFixtureId('') }}
             className={clsx(
               'px-3 py-1.5 rounded-lg text-xs font-bold tracking-wider transition',
               sport === s ? 'bg-emerald-600 text-white' : 'bg-[var(--bg-secondary)] border border-[var(--border)] text-gray-400'
@@ -208,25 +248,132 @@ function DashboardMobile() {
           disabled={isScanning}
           className={clsx(
             'ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold',
-            isScanning ? 'bg-gray-800 text-gray-500' : 'bg-emerald-600 text-white'
+            isScanning ? 'bg-gray-800 text-gray-500' : 'bg-emerald-600 text-white active:bg-emerald-500'
           )}
         >
           {isScanning ? '● SCANNING' : '▶ SCAN'}
         </button>
       </div>
 
-      {/* Horizontal scrolling metric cards */}
-      <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 snap-x snap-mandatory scrollbar-hide">
-        <MetricScrollCard label="PREDICTIONS" value={String(scannerState?.predictions_generated || 0)} color="text-emerald-400" />
-        <MetricScrollCard label="LIVE" value={String(liveFixtures.length)} color={liveFixtures.length ? 'text-red-400' : 'text-gray-500'} />
-        <MetricScrollCard label="VALUE" value={String(scannerState?.value_opportunities || 0)} color="text-emerald-400" />
-        <MetricScrollCard label="CALIBRATION" value={calib?.brier_score != null ? calib.brier_score.toFixed(2) : '—'} />
-        <MetricScrollCard label="STATUS" value={isScanning ? 'SCAN' : 'IDLE'} color={isScanning ? 'text-emerald-400' : 'text-gray-500'} />
+      {/* ── Horizontal metric cards ── */}
+      <div className="flex gap-2.5 overflow-x-auto pb-2 -mx-4 px-4 snap-x snap-mandatory scrollbar-hide">
+        <MetricScrollCard label="UNIVERSE" value={`${scannerState?.fixtures_total || fixtures.length}`} sub={`${fixtures.length} fixtures`} />
+        <MetricScrollCard label="PREDICTIONS" value={`${scannerState?.predictions_generated || 0}`} color="text-emerald-400" />
+        <MetricScrollCard label="VALUE" value={`${scannerState?.value_opportunities || 0}`} color="text-emerald-400" />
+        <MetricScrollCard label="CALIBRATION" value={calib?.brier_score != null ? calib.brier_score.toFixed(3) : '—'} />
+        <MetricScrollCard label="LIVE / ODDS" value={`${liveFixtures.length} / ${slipsOdds?.count || 0}`} color={liveFixtures.length ? 'text-emerald-400' : 'text-gray-500'} />
       </div>
 
-      {/* Recent predictions as cards */}
+      {/* ── Fixture selector (tap to open bottom sheet) ── */}
+      <button
+        onClick={() => setFixtureSheetOpen(true)}
+        className="w-full flex items-center justify-between p-3 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] active:bg-[var(--bg-tertiary)]"
+      >
+        <div className="min-w-0 text-left">
+          <div className="text-[10px] text-gray-500">FIXTURE</div>
+          <div className="text-xs font-bold text-white truncate">{activeFixtureObj ? activeFixtureObj.label : 'Select fixture'}</div>
+        </div>
+        <span className="text-gray-500 text-xs">›</span>
+      </button>
+
+      {/* ── Active fixture card ── */}
+      {activeFixtureObj && (
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-xs font-bold text-white truncate">{activeFixtureObj.label}</span>
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-[var(--bg-primary)] border border-[var(--border)] text-gray-500 flex-shrink-0">{activeFixtureObj.competition}</span>
+              {liveFixtures.find((l: any) => l.id === activeFixtureObj.id) && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-900/30 border border-red-800/30 text-red-400 animate-pulse flex-shrink-0">LIVE</span>
+              )}
+            </div>
+            <span className="text-[9px] text-gray-500 flex-shrink-0">{activeFixtureObj.kickoff_at ? new Date(activeFixtureObj.kickoff_at).toLocaleDateString() : ''}</span>
+          </div>
+
+          {(() => {
+            const pred = predictions.find((p: any) => p.fixture_id === activeFixtureObj.id) || activePred
+            const odds = slipsOdds?.odds?.filter((o: any) => o.event_id === activeFixtureObj.id) || []
+            if (!pred && odds.length === 0) {
+              return <div className="text-[11px] text-gray-600">No prediction — tap <span className="text-emerald-400">SCAN</span></div>
+            }
+            return (
+              <div className="space-y-2">
+                {pred && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="p-2 rounded-lg bg-[var(--bg-primary)]">
+                      <div className="text-[9px] text-gray-500">MODEL vs MARKET</div>
+                      <div className="space-y-1 mt-1 text-[11px]">
+                        <div className="flex justify-between"><span className="text-gray-500">Market</span><span className="font-mono text-white">{pred.market_odds?.toFixed(2)}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-500">Calibrated</span><span className="font-mono text-emerald-400">{(pred.calibrated_probability * 100).toFixed(1)}%</span></div>
+                        <div className="flex justify-between"><span className="text-gray-500">Edge</span><span className={clsx('font-mono', (pred.edge || 0) > 0 ? 'text-emerald-400' : 'text-red-400')}>{((pred.edge || 0) * 100).toFixed(1)}%</span></div>
+                      </div>
+                    </div>
+                    <div className="p-2 rounded-lg bg-[var(--bg-primary)]">
+                      <div className="text-[9px] text-gray-500">CANONICAL ODDS</div>
+                      <div className="space-y-1 mt-1 text-[11px]">
+                        {odds.length > 0 ? odds.slice(0, 3).map((o: any) => (
+                          <div key={o.id} className="flex justify-between"><span className="text-gray-500 truncate">{o.selection}</span><span className="font-mono text-white">{o.price_decimal.toFixed(2)}</span></div>
+                        )) : <div className="text-gray-600">No odds</div>}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <button onClick={() => { import('../services/auth').then(m => m.authFetch(`/api/scanner/scan-now?sport=${sport}`, { method: 'POST' })) }} className="flex-1 py-2 rounded-lg bg-emerald-600 text-white text-[11px] font-bold active:bg-emerald-500">SCAN FIXTURE</button>
+                  <button onClick={() => document.dispatchEvent(new CustomEvent('apex:navigate', { detail: 'slips' }))} className="px-3 py-2 rounded-lg border border-[var(--border)] text-[11px] text-gray-400">SLIP →</button>
+                </div>
+              </div>
+            )
+          })()}
+        </div>
+      )}
+
+      {/* ── Selected prediction detail ── */}
+      {activePred && (
+        <div className="rounded-xl border border-emerald-800/20 bg-emerald-950/10 p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-xs font-bold text-white truncate">{activePred.fixture_label}</span>
+              <span className={clsx('text-[10px] font-bold px-1.5 py-0.5 rounded', activePred.selection === 'HOME' ? 'bg-emerald-900/30 text-emerald-400' : activePred.selection === 'AWAY' ? 'bg-red-900/30 text-red-400' : 'bg-yellow-900/30 text-yellow-400')}>{activePred.selection}</span>
+              {activePred.is_value && <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-900/30 border border-emerald-800/30 text-emerald-400">VALUE</span>}
+            </div>
+            <span className="text-lg font-bold text-white">{((activePred.calibrated_probability || 0) * 100).toFixed(0)}%</span>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-[10px]">
+            <div><span className="text-gray-500">MARKET</span><div className="text-white">{activePred.market}</div></div>
+            <div><span className="text-gray-500">EDGE</span><div className={clsx((activePred.edge || 0) > 0 ? 'text-emerald-400' : 'text-red-400')}>{((activePred.edge || 0) * 100).toFixed(1)}%</div></div>
+            <div><span className="text-gray-500">RISK</span><div className={clsx(activePred.risk_level === 'LOW' ? 'text-emerald-400' : 'text-yellow-400')}>{activePred.risk_level}</div></div>
+          </div>
+          <div className="text-[10px] text-gray-500">Confidence {(activePred.confidence * 100).toFixed(0)}% • {activePred.competition} • {activePred.sport}</div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => { setInspectorId(activePred.id || activePred.fixture_id) }}
+              className="flex-1 py-2 rounded-lg border border-[var(--border)] text-[11px] text-gray-400 active:bg-[var(--bg-tertiary)]"
+            >
+              INSPECT WHY
+            </button>
+            {(() => {
+              const pid = activePred.id || activePred.fixture_id
+              const inSlip = slipHas(pid)
+              return (
+                <button
+                  onClick={async () => { if (inSlip) { slipRemove(pid) } else { await slipAdd(activePred) } }}
+                  className={clsx('flex-1 py-2 rounded-lg text-[11px] font-bold active:opacity-80', inSlip ? 'bg-emerald-900/30 border border-emerald-800/30 text-emerald-400' : 'bg-emerald-600 text-white')}
+                >
+                  {inSlip ? '✓ IN SLIP' : '+ ADD TO SLIP'}
+                </button>
+              )
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* ── Recent predictions ── */}
       <div>
-        <h3 className="text-[10px] tracking-widest text-gray-500 font-bold mb-2">RECENT INTELLIGENCE</h3>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-[10px] tracking-widest text-gray-500 font-bold">RECENT INTELLIGENCE</h3>
+          <span className="text-[10px] text-gray-600">{predictions.length}</span>
+        </div>
         {predictions.length === 0 ? (
           <div className="p-6 text-center rounded-xl border border-dashed border-[var(--border)] bg-[var(--bg-secondary)]">
             <div className="text-sm text-gray-500 mb-1">No predictions yet</div>
@@ -234,31 +381,295 @@ function DashboardMobile() {
           </div>
         ) : (
           <div className="space-y-2">
-            {predictions.slice(0, 6).map((p: any) => (
-              <MobilePredictionCard key={(p.id || p.fixture_id) + p.selection} pred={p} />
+            {predictions.slice(0, 8).map((p: any) => (
+              <MobilePredictionCard
+                key={(p.id || p.fixture_id) + p.selection}
+                pred={p}
+                selected={activePred?.fixture_id === p.fixture_id}
+                onSelect={() => { setSelectedPred(p); setPredDetailOpen(true) }}
+                onInspect={() => setInspectorId(p.id || p.fixture_id)}
+              />
             ))}
           </div>
         )}
       </div>
 
-      {/* Live fixtures */}
+      {/* ── Live fixtures ── */}
       {liveFixtures.length > 0 && (
         <div>
           <h3 className="text-[10px] tracking-widest text-gray-500 font-bold mb-2">LIVE NOW</h3>
           <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 snap-x snap-mandatory scrollbar-hide">
             {liveFixtures.map((f: any) => (
-              <div key={f.id} className="flex-shrink-0 w-48 p-2.5 rounded-xl border border-red-800/30 bg-red-950/20 snap-start">
+              <div key={f.id} className="flex-shrink-0 w-44 p-2.5 rounded-xl border border-red-800/30 bg-red-950/20 snap-start">
                 <div className="flex items-center gap-1.5 mb-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
                   <span className="text-[9px] text-red-400 font-bold">LIVE</span>
                 </div>
-                <div className="text-xs font-bold text-white truncate">{f.label || f.home_team}</div>
-                <div className="text-[10px] text-gray-500">{f.competition}</div>
+                <div className="text-[11px] font-bold text-white truncate">{f.label || f.home_team}</div>
+                <div className="text-[9px] text-gray-500">{f.competition}</div>
               </div>
             ))}
           </div>
         </div>
       )}
+
+      {/* ── Pipeline hint ── */}
+      <div className="flex items-center gap-1 text-[9px] font-mono text-gray-600 overflow-x-auto pb-1 scrollbar-hide">
+        {['DATA', 'FEATURES', '6× SPECIALISTS', 'ENSEMBLE', 'CALIBRATION', 'VALUE', 'RISK', 'PREDICTION'].map((s, i, arr) => (
+          <span key={s} className="flex items-center gap-1 flex-shrink-0">
+            <span className={clsx('px-1.5 py-0.5 rounded', s === 'PREDICTION' ? 'bg-emerald-600 text-white' : 'bg-[var(--bg-secondary)]')}>{s}</span>
+            {i < arr.length - 1 && <span className="text-emerald-600">→</span>}
+          </span>
+        ))}
+      </div>
+
+      {/* ── Collapsible telemetry sections ── */}
+      <div className="space-y-2">
+        <button onClick={() => setTelemetryOpen(!telemetryOpen)} className="w-full flex items-center justify-between p-2.5 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] active:bg-[var(--bg-tertiary)]">
+          <span className="text-[10px] tracking-widest text-gray-500 font-bold">ENGINE STATUS</span>
+          <span className="text-gray-500 text-xs">{telemetryOpen ? '−' : '+'}</span>
+        </button>
+        {telemetryOpen && (
+          <div className="space-y-2">
+            {/* Provider health */}
+            {providers && (
+              <div className="p-2.5 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]">
+                <div className="text-[9px] tracking-wider text-gray-500 mb-1.5">PROVIDERS</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(providers).map(([name, v]: any) => (
+                    <span key={name} className={clsx('text-[9px] px-1.5 py-0.5 rounded border', v.configured ? (v.is_healthy ? 'bg-emerald-900/20 border-emerald-800/30 text-emerald-400' : 'bg-yellow-900/20 border-yellow-800/30 text-yellow-400') : 'bg-[var(--bg-primary)] border-[var(--border)] text-gray-500')}>
+                      {name} {v.configured ? '●' : '○'}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {/* Brain / AI model */}
+            {brain && (
+              <div className="p-2.5 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]">
+                <div className="text-[9px] tracking-wider text-gray-500 mb-1.5">AI BRAIN</div>
+                <div className="text-[11px]">
+                  <span className={clsx(brain.is_configured ? 'text-emerald-400' : 'text-yellow-400')}>{brain.enabled_count}/{brain.total_agents} agents</span>
+                  <span className="text-gray-500 ml-2">{brain.is_configured ? `${brain.active_llm.provider}:${brain.active_llm.model?.slice(0, 20)}` : 'No model'}</span>
+                </div>
+              </div>
+            )}
+            {/* Scanner pipeline */}
+            {scannerState?.pipeline_stages?.length > 0 && (
+              <div className="p-2.5 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]">
+                <div className="text-[9px] tracking-wider text-gray-500 mb-1.5">PIPELINE</div>
+                <div className="space-y-1">
+                  {scannerState.pipeline_stages.slice(-4).map((s: any, i: number) => (
+                    <div key={i} className="flex items-center gap-2 text-[10px]">
+                      <span className={clsx(s.status === 'COMPLETE' ? 'text-emerald-400' : s.status === 'ACTIVE' ? 'text-yellow-400 animate-pulse' : 'text-gray-600')}>{s.status === 'COMPLETE' ? '✓' : s.status === 'ACTIVE' ? '●' : '○'}</span>
+                      <span className="text-gray-300">{s.stage}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {/* Calibration detail */}
+            {calib && (
+              <div className="p-2.5 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]">
+                <div className="text-[9px] tracking-wider text-gray-500 mb-1.5">CALIBRATION</div>
+                <div className="flex items-center gap-3 text-[11px]">
+                  <span className="text-gray-500">Brier <span className="text-white font-mono">{calib.brier_score ?? '—'}</span></span>
+                  <span className="text-gray-500">Resolved <span className="text-white">{calib.resolved}/{calib.total_predictions}</span></span>
+                </div>
+                <div className="w-full bg-[var(--bg-primary)] rounded h-1.5 mt-1.5">
+                  <div className="bg-emerald-600 h-1.5 rounded" style={{ width: `${Math.min(100, (calib.resolved / Math.max(1, calib.total_predictions)) * 100)}%` }} />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Fixture selector bottom sheet ── */}
+      {fixtureSheetOpen && (
+        <FixtureSelectorSheet
+          sport={sport}
+          fixtures={fixtures}
+          activeId={activeFixtureId}
+          onSelect={(id) => { setActiveFixtureId(id); setFixtureSheetOpen(false) }}
+          onClose={() => setFixtureSheetOpen(false)}
+        />
+      )}
+
+      {/* ── Prediction detail sheet ── */}
+      {predDetailOpen && activePred && (
+        <PredictionDetailSheet
+          pred={activePred}
+          onClose={() => setPredDetailOpen(false)}
+          onInspect={() => { setInspectorId(activePred.id || activePred.fixture_id); setPredDetailOpen(false) }}
+          onAddSlip={async () => {
+            const pid = activePred.id || activePred.fixture_id
+            if (slipHas(pid)) { slipRemove(pid) } else { await slipAdd(activePred) }
+          }}
+          inSlip={slipHas(activePred.id || activePred.fixture_id)}
+        />
+      )}
+
+      {/* ── Prediction inspector ── */}
+      {inspectorId && (
+        <MobileInspectorSheet predId={inspectorId} onClose={() => setInspectorId(null)} />
+      )}
+    </div>
+  )
+}
+
+/* ── Fixture selector bottom sheet ── */
+function FixtureSelectorSheet({ sport, fixtures, activeId, onSelect, onClose }: { sport: string; fixtures: any[]; activeId: string; onSelect: (id: string) => void; onClose: () => void }) {
+  const [query, setQuery] = useState('')
+  const filtered = fixtures.filter(f => !query || f.label?.toLowerCase().includes(query.toLowerCase()) || f.competition?.toLowerCase().includes(query.toLowerCase()))
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full bg-[var(--bg-secondary)] rounded-t-2xl border-t border-[var(--border)] max-h-[70vh] flex flex-col animate-slide-up">
+        <div className="flex justify-center pt-3 pb-1"><div className="w-10 h-1 rounded-full bg-gray-600" /></div>
+        <div className="flex items-center justify-between px-4 pb-2">
+          <div className="text-xs font-bold tracking-wider text-white">SELECT FIXTURE</div>
+          <button onClick={onClose} className="text-gray-500 hover:text-white text-sm">✕</button>
+        </div>
+        <div className="px-4 pb-2">
+          <input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Search fixtures…" className="w-full bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg px-3 py-2 text-xs text-white placeholder-gray-600" />
+        </div>
+        <div className="flex-1 overflow-auto px-4 pb-4 space-y-1">
+          {filtered.length === 0 ? (
+            <div className="text-xs text-gray-600 text-center py-6">No fixtures</div>
+          ) : filtered.map(f => (
+            <button key={f.id} onClick={() => onSelect(f.id)} className={clsx('w-full text-left p-2.5 rounded-lg flex items-center justify-between active:bg-[var(--bg-tertiary)]', activeId === f.id && 'bg-[var(--bg-tertiary)]')}>
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-white truncate">{f.label}</div>
+                <div className="text-[10px] text-gray-500">{f.competition} • {f.kickoff_at ? new Date(f.kickoff_at).toLocaleDateString() : ''}</div>
+              </div>
+              {activeId === f.id && <span className="text-emerald-400 text-xs">✓</span>}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── Prediction detail bottom sheet ── */
+function PredictionDetailSheet({ pred, onClose, onInspect, onAddSlip, inSlip }: { pred: any; onClose: () => void; onInspect: () => void; onAddSlip: () => void; inSlip: boolean }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full bg-[var(--bg-secondary)] rounded-t-2xl border-t border-[var(--border)] max-h-[85vh] flex flex-col animate-slide-up">
+        <div className="flex justify-center pt-3 pb-1"><div className="w-10 h-1 rounded-full bg-gray-600" /></div>
+        <div className="flex items-center justify-between px-4 pb-2">
+          <div className="text-xs font-bold tracking-wider text-white">PREDICTION DETAIL</div>
+          <button onClick={onClose} className="text-gray-500 hover:text-white text-sm">✕</button>
+        </div>
+        <div className="flex-1 overflow-auto px-4 pb-6 space-y-3">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-sm font-bold text-white truncate">{pred.fixture_label}</span>
+              <span className={clsx('text-[10px] font-bold px-1.5 py-0.5 rounded', pred.selection === 'HOME' ? 'bg-emerald-900/30 text-emerald-400' : pred.selection === 'AWAY' ? 'bg-red-900/30 text-red-400' : 'bg-yellow-900/30 text-yellow-400')}>{pred.selection}</span>
+            </div>
+            <span className="text-xl font-bold text-white">{((pred.calibrated_probability || 0) * 100).toFixed(0)}%</span>
+          </div>
+          <div className="text-[10px] text-gray-500">{pred.competition} • {pred.sport} • {pred.market}</div>
+
+          {/* Metrics grid */}
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { label: 'MARKET ODDS', value: pred.market_odds?.toFixed(2) },
+              { label: 'IMPLIED PROB', value: `${(pred.implied_probability * 100).toFixed(1)}%` },
+              { label: 'MODEL PROB', value: `${(pred.probability * 100).toFixed(1)}%` },
+              { label: 'CALIBRATED', value: `${(pred.calibrated_probability * 100).toFixed(1)}%`, color: 'text-emerald-400' },
+              { label: 'EDGE', value: `${((pred.edge || 0) * 100).toFixed(1)}%`, color: (pred.edge || 0) > 0 ? 'text-emerald-400' : 'text-red-400' },
+              { label: 'EXPECTED VALUE', value: pred.expected_value?.toFixed(3), color: (pred.expected_value || 0) > 0 ? 'text-emerald-400' : 'text-gray-400' },
+              { label: 'FAIR ODDS', value: pred.fair_odds },
+              { label: 'CONFIDENCE', value: `${(pred.confidence * 100).toFixed(0)}%` },
+            ].map(m => (
+              <div key={m.label} className="p-2 rounded-lg bg-[var(--bg-primary)]">
+                <div className="text-[9px] text-gray-500">{m.label}</div>
+                <div className={clsx('text-xs font-mono mt-0.5', m.color || 'text-white')}>{m.value || '—'}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Risk */}
+          <div className="p-2.5 rounded-lg bg-[var(--bg-primary)] flex items-center justify-between">
+            <span className="text-[10px] text-gray-500">RISK LEVEL</span>
+            <span className={clsx('text-xs font-bold', pred.risk_level === 'LOW' ? 'text-emerald-400' : pred.risk_level === 'MEDIUM' ? 'text-yellow-400' : 'text-red-400')}>{pred.risk_level}</span>
+          </div>
+
+          {/* Provenance */}
+          {pred.prompt_paths && (
+            <div className="p-2.5 rounded-lg bg-[var(--bg-primary)]">
+              <div className="text-[9px] text-gray-500 mb-1">PROVENANCE</div>
+              <div className="text-[9px] font-mono text-gray-600 truncate">{Object.values(pred.prompt_paths).join(' • ').slice(0, 80)}</div>
+              {pred.model_used && <div className="text-[9px] font-mono text-gray-600 mt-0.5">Model: {pred.model_used}</div>}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-2">
+            <button onClick={onInspect} className="flex-1 py-2.5 rounded-xl border border-[var(--border)] text-xs text-gray-400 active:bg-[var(--bg-tertiary)]">INSPECT WHY</button>
+            <button onClick={onAddSlip} className={clsx('flex-1 py-2.5 rounded-xl text-xs font-bold active:opacity-80', inSlip ? 'bg-emerald-900/30 border border-emerald-800/30 text-emerald-400' : 'bg-emerald-600 text-white')}>
+              {inSlip ? '✓ IN SLIP — REMOVE' : '+ ADD TO SLIP'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── Mobile inspector sheet (simplified) ── */
+function MobileInspectorSheet({ predId, onClose }: { predId: string; onClose: () => void }) {
+  const [data, setData] = useState<any>(null)
+  useEffect(() => {
+    import('../services/auth').then(m => m.authFetch(`/api/predictions/${predId}/trace`).then(r => r.json()).then(setData).catch(() => {}))
+  }, [predId])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full bg-[var(--bg-secondary)] rounded-t-2xl border-t border-[var(--border)] max-h-[80vh] flex flex-col animate-slide-up">
+        <div className="flex justify-center pt-3 pb-1"><div className="w-10 h-1 rounded-full bg-gray-600" /></div>
+        <div className="flex items-center justify-between px-4 pb-2">
+          <div className="text-xs font-bold tracking-wider text-white">INTELLIGENCE TRACE</div>
+          <button onClick={onClose} className="text-gray-500 hover:text-white text-sm">✕</button>
+        </div>
+        <div className="flex-1 overflow-auto px-4 pb-6">
+          {!data ? (
+            <div className="text-xs text-gray-500 text-center py-8">Loading trace…</div>
+          ) : data.error ? (
+            <div className="text-xs text-red-400 text-center py-8">{data.error}</div>
+          ) : (
+            <div className="space-y-2 text-[11px]">
+              {data.specialists?.map((s: any, i: number) => (
+                <div key={i} className="p-2.5 rounded-lg bg-[var(--bg-primary)] border border-[var(--border)]">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-white">{s.name}</span>
+                    <span className={clsx('text-[9px] px-1.5 py-0.5 rounded', s.status === 'COMPLETE' ? 'bg-emerald-900/20 text-emerald-400' : 'bg-red-900/20 text-red-400')}>{s.status}</span>
+                  </div>
+                  {s.output && <div className="text-[10px] text-gray-400 mt-1 truncate">{typeof s.output === 'string' ? s.output : JSON.stringify(s.output).slice(0, 100)}</div>}
+                </div>
+              ))}
+              {data.ensemble && (
+                <div className="p-2.5 rounded-lg bg-emerald-900/10 border border-emerald-800/20">
+                  <div className="text-[9px] text-emerald-400 font-bold">ENSEMBLE</div>
+                  <div className="text-[11px] text-white mt-0.5">{typeof data.ensemble === 'string' ? data.ensemble : JSON.stringify(data.ensemble).slice(0, 150)}</div>
+                </div>
+              )}
+              {data.provenance && (
+                <div className="p-2.5 rounded-lg bg-[var(--bg-primary)] border border-[var(--border)]">
+                  <div className="text-[9px] text-gray-500 font-bold">PROVENANCE</div>
+                  <div className="text-[10px] text-gray-400 mt-0.5 font-mono">{JSON.stringify(data.provenance).slice(0, 200)}</div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -603,22 +1014,23 @@ function SlipsMobile() {
 }
 
 /* ── Shared Components ── */
-function MetricScrollCard({ label, value, color }: { label: string; value: string; color?: string }) {
+function MetricScrollCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
   return (
     <div className="flex-shrink-0 w-28 snap-start p-3 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]">
       <div className="text-[9px] text-gray-500 tracking-wider">{label}</div>
       <div className={clsx('text-lg font-bold mt-0.5', color || 'text-white')}>{value}</div>
+      {sub && <div className="text-[9px] text-gray-600 mt-0.5">{sub}</div>}
     </div>
   )
 }
 
-function MobilePredictionCard({ pred }: { pred: any }) {
+function MobilePredictionCard({ pred, selected, onSelect, onInspect }: { pred: any; selected?: boolean; onSelect?: () => void; onInspect?: () => void }) {
   const { add: slipAdd, has: slipHas, remove: slipRemove } = useSlipCart()
   const pid = pred.id || pred.fixture_id
   const inSlip = slipHas(pid)
 
   return (
-    <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]">
+    <div onClick={onSelect} className={clsx('p-3 rounded-xl border cursor-pointer active:bg-[var(--bg-tertiary)] transition', selected ? 'border-emerald-800/30 bg-[#1a2332]' : 'border-[var(--border)] bg-[var(--bg-secondary)]')}>
       <div className="flex items-center justify-between">
         <div className="min-w-0 flex-1">
           <div className="text-xs font-bold text-white truncate">{pred.fixture_label}</div>
@@ -639,19 +1051,22 @@ function MobilePredictionCard({ pred }: { pred: any }) {
             'text-[9px] px-1.5 py-0.5 rounded',
             pred.risk_level === 'LOW' ? 'bg-emerald-900/20 text-emerald-400' : 'bg-yellow-900/20 text-yellow-400'
           )}>{pred.risk_level}</span>
+          {pred.is_value && <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-900/30 text-emerald-400 font-bold">VALUE</span>}
         </div>
-        <button
-          onClick={async (e) => {
-            e.stopPropagation()
-            if (inSlip) { slipRemove(pid) } else { await slipAdd(pred) }
-          }}
-          className={clsx(
-            'px-2.5 py-1 rounded-lg text-[10px] font-bold transition',
-            inSlip ? 'bg-emerald-900/30 text-emerald-400' : 'bg-emerald-600 text-white'
+        <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+          {onInspect && (
+            <button onClick={onInspect} className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] text-gray-500" title="Inspect">🔍</button>
           )}
-        >
-          {inSlip ? '✓' : '+'}
-        </button>
+          <button
+            onClick={async () => { if (inSlip) { slipRemove(pid) } else { await slipAdd(pred) } }}
+            className={clsx(
+              'px-2 py-1 rounded-lg text-[10px] font-bold transition',
+              inSlip ? 'bg-emerald-900/30 text-emerald-400' : 'bg-emerald-600 text-white'
+            )}
+          >
+            {inSlip ? '✓' : '+'}
+          </button>
+        </div>
       </div>
     </div>
   )
