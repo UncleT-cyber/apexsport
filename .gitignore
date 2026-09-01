@@ -1,0 +1,34 @@
+# Secrets — never commit
+settings.json
+.env
+.env.local
+database/users.json
+database/reset_tokens.json
+database/*.db
+*.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+*.so
+
+# Frontend
+apps/web/node_modules/
+apps/web/dist/
+apps/web/.env
+apps/web/.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/

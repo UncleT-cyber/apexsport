@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+:root {
+  --bg-primary: #0d1117;
+  --bg-secondary: #161b22;
+  --bg-tertiary: #21262d;
+  --border: #30363d;
+  --text-primary: #e6edf3;
+  --text-secondary: #8b949e;
+  --text-muted: #6e7681;
+  --accent-green: #3fb950;
+  --accent-red: #f85149;
+  --accent-yellow: #d29922;
+  --accent-blue: #58a6ff;
+  --accent-purple: #bc8cff;
+  --accent-orange: #f0883e;
+  --sidebar-width-expanded: 13rem;
+  --sidebar-width-collapsed: 3.5rem;
+}
+* { box-sizing: border-box; }
+html { background: #070a0f; }
+body { margin:0; background: #070a0f; color: var(--text-primary); font-family: 'SF Mono','Fira Code', monospace; font-size:13px; line-height:1.5; }
+html,body,#root{height:100%;margin:0;overflow:hidden}
+.app-root{display:flex;height:calc(100vh - 8px);margin:0 8px 8px 8px;overflow:hidden;border-radius:8px;border:1px solid rgba(48,54,61,0.6);box-shadow:0 4px 24px rgba(0,0,0,0.35);background:var(--bg-primary)}
+@media (max-width: 768px){ .app-root{margin:0 6px 6px 6px;height:calc(100vh - 6px);border-radius:6px} }
+@media (min-width: 1280px){ .app-root{margin:0 10px 10px 10px;height:calc(100vh - 10px);border-radius:8px} }
+.sidebar{width:var(--sidebar-width-expanded);transition:width 0.2s ease;display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;height:100%}
+.sidebar.collapsed{width:var(--sidebar-width-collapsed)}
+.sidebar.collapsed .nav-label,.sidebar.collapsed .nav-shortcut,.sidebar.collapsed .nav-group-label,.sidebar.collapsed .sidebar-logo-text,.sidebar.collapsed .sidebar-status-text,.sidebar.collapsed .sidebar-profile-info{opacity:0;width:0;overflow:hidden}
+.nav-item{display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0.6rem;border-radius:4px;cursor:pointer;transition:background 0.12s,color 0.12s;color:var(--text-muted);font-size:11px;white-space:nowrap;position:relative}
+.nav-item:hover{background:var(--bg-tertiary);color:var(--text-primary)}
+.nav-item.active{background:var(--bg-tertiary);color:var(--text-primary);font-weight:500}
+.nav-item.active::before{content:'';position:absolute;left:0;top:4px;bottom:4px;width:2px;background:var(--accent-green);border-radius:1px}
+.sidebar.collapsed .nav-item{justify-content:center;padding:0.5rem 0}
+.nav-group-label{font-size:9px;font-weight:700;letter-spacing:0.08em;color:var(--text-muted);padding:0.6rem 0.6rem 0.2rem;text-transform:uppercase}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}

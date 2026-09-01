@@ -1,0 +1,67 @@
+services:
+  - type: web
+    name: apexsports-api
+    runtime: python
+    plan: starter
+    buildCommand: pip install -e . && pip install pyotp qrcode pillow email-validator
+    startCommand: uvicorn apps.api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: APEXSPORT_ENV
+        value: production
+      - key: APEXSPORT_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: apexsports-db
+          property: connectionString
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SPORTMONKS_API_KEY
+        sync: false
+      - key: API_FOOTBALL_API_KEY
+        sync: false
+      - key: SPORTRADAR_API_KEY
+        sync: false
+      - key: THE_ODDS_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: HUGGINGFACE_API_KEY
+        sync: false
+      - key: APEXSPORT_CORS_ORIGINS
+        value: https://apexsports.onrender.com,https://api.apexsports.onrender.com
+
+  - type: web
+    name: apexsports-web
+    runtime: static
+    plan: starter
+    buildCommand: cd apps/web && npm ci && npm run build
+    staticPublishPath: apps/web/dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        value: https://apexsports-api.onrender.com
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+
+databases:
+  - name: apexsports-db
+    plan: starter
+    databaseName: apexsport
+    user: apexsport
