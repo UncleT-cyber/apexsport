@@ -19,8 +19,8 @@ function saveMessages(msgs: Msg[]) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(msgs.slice(-30))) } catch {}
 }
 
-export function Copilot() {
-  const [open, setOpen] = useState(false)
+export function Copilot({ mobileOverride }: { mobileOverride?: boolean }) {
+  const [open, setOpen] = useState(!!mobileOverride)
   const [messages, setMessages] = useState<Msg[]>(() => loadMessages())
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -118,7 +118,11 @@ export function Copilot() {
 
       {/* Expanded — bottom-right chat panel, inset from edge */}
       {open && (
-        <div className="fixed bottom-8 right-8 z-40 w-[380px] max-w-[90vw] h-[460px] max-h-[70vh] bg-[var(--bg-secondary)] border border-emerald-800/30 rounded-lg shadow-[0_8px_32px_rgba(0,0,0,0.5),0_0_20px_rgba(16,185,129,0.2)] flex flex-col overflow-hidden">
+        <div className={clsx(
+          'fixed z-50 bg-[var(--bg-secondary)] border border-emerald-800/30 flex flex-col overflow-hidden',
+          'bottom-8 right-8 w-[380px] max-w-[90vw] h-[460px] max-h-[70vh] rounded-lg shadow-[0_8px_32px_rgba(0,0,0,0.5),0_0_20px_rgba(16,185,129,0.2)]',
+          'max-[767px]:inset-0 max-[767px]:w-full max-[767px]:h-full max-[767px]:max-w-full max-[767px]:max-h-full max-[767px]:rounded-none'
+        )}>
           {/* Header */}
           <div className="px-3 py-2 border-b border-[var(--border)] bg-gradient-to-r from-emerald-950/30 to-blue-950/20 flex items-center justify-between flex-shrink-0">
             <div className="flex items-center gap-2">

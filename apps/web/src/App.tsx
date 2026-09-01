@@ -22,6 +22,8 @@ import { AuthProvider, useAuth } from './services/auth'
 import clsx from 'clsx'
 import { LayoutDashboard, ScanSearch, Zap, Settings, ChevronLeft, ChevronRight, User, Trophy, Settings as SettingsIcon, BarChart3, History, ShoppingCart, Sparkles } from 'lucide-react'
 import { Copilot } from './components/Copilot'
+import { MobileShell } from './components/MobileShell'
+import { pageFromPath, routes, type AppPage } from './config/routeConfig'
 
 function RequireAuth({ children, adminOnly = false }: { children: React.ReactNode; adminOnly?: boolean }) {
   const { isAuthenticated, isAdmin, loading } = useAuth()
@@ -46,10 +48,20 @@ function PublicOnly({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-type Page = 'dashboard' | 'scanner' | 'predictions' | 'slips' | 'analytics' | 'backtest' | 'settings' | 'profile' | 'admin'
+/* ── useIsMobile hook ── */
+function useIsMobile() {
+  const [mobile, setMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768)
+  useEffect(() => {
+    const check = () => setMobile(window.innerWidth < 768)
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
+  return mobile
+}
 
-function AppShell() {
-  const [page, setPage] = useState<Page>('dashboard')
+/* ── Desktop Shell ── */
+function DesktopShell() {
+  const [page, setPage] = useState<AppPage>('dashboard')
   const [collapsed, setCollapsed] = useState(false)
   const { connected: wsConnected } = useWebSocket()
   const { data: health } = usePolling(() => fetch('/health').then(r=>r.json().catch(()=>null)), 5000)
@@ -59,42 +71,30 @@ function AppShell() {
   const navHook = useNavigate()
   const loc = useLocation()
 
-  // Sync page with URL
   useEffect(() => {
-    const p = loc.pathname.replace('/app', '').replace('/', '') || 'dashboard'
-    if (['dashboard','scanner','predictions','slips','analytics','backtest','settings','profile','admin'].includes(p)) {
-      setPage(p as Page)
-    }
+    setPage(pageFromPath(loc.pathname))
   }, [loc.pathname])
 
-  const go = (pg: Page) => {
-    if (pg === 'admin') navHook('/admin')
-    else if (pg === 'settings') navHook('/app/settings')
-    else if (pg === 'profile') navHook('/app/profile')
-    else navHook(`/app/${pg}`)
+  const go = (pg: AppPage) => {
+    const route = routes.find(r => r.page === pg)
+    if (route) navHook(route.path)
     setPage(pg)
   }
 
-  // Global navigation via apex:navigate events
   useEffect(() => {
     const h = (e: any) => {
       const d = e.detail
-      if (['dashboard','scanner','predictions','slips','analytics','backtest','settings','profile','admin'].includes(d)) {
-        go(d)
+      if (d === 'copilot') {
+        document.dispatchEvent(new CustomEvent('apex:open-copilot' as any, { detail: { type: 'general' } }))
+        return
       }
+      if (routes.some(r => r.page === d)) go(d as AppPage)
     }
     document.addEventListener('apex:navigate' as any, h)
     return () => document.removeEventListener('apex:navigate' as any, h)
   }, [])
 
-  const nav = [
-    { label: 'Dashboard', page: 'dashboard' as Page, icon: <LayoutDashboard size={18}/> },
-    { label: 'Scanner', page: 'scanner' as Page, icon: <ScanSearch size={18}/> },
-    { label: 'Predictions', page: 'predictions' as Page, icon: <Trophy size={18}/> },
-    { label: 'My Slip', page: 'slips' as Page, icon: <ShoppingCart size={18}/>, badge: slipCount > 0 ? `${slipCount}` : undefined },
-    { label: 'Analytics', page: 'analytics' as Page, icon: <BarChart3 size={18}/> },
-    { label: 'Backtest', page: 'backtest' as Page, icon: <History size={18}/> },
-  ]
+  const primaryNav = routes.filter(r => r.group === 'primary')
   const intelNav = [
     { label: 'Apex Copilot', action: () => document.dispatchEvent(new CustomEvent('apex:open-copilot' as any, { detail: { type: 'general' } })), icon: <Sparkles size={18} className="text-emerald-400 animate-pulse" /> },
   ]
@@ -117,13 +117,15 @@ function AppShell() {
         </div>
         <nav className="flex-1 overflow-auto py-2">
           <div className="nav-group-label sidebar-status-text">INTEL</div>
-          {nav.map(i=>(
-            <div key={i.page} onClick={()=>go(i.page)} className={clsx('nav-item mx-1.5 relative', page===i.page && 'active')}>
-              <span className="flex-shrink-0">{i.icon}</span><span className="nav-label">{i.label}</span>
-              {(i as any).badge && <span className="ml-auto bg-emerald-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{(i as any).badge}</span>}
-              {i.page === 'slips' && slipCount > 0 && !(i as any).badge && <span className="ml-auto bg-emerald-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{slipCount}</span>}
-            </div>
-          ))}
+          {primaryNav.map(r => {
+            const Icon = r.icon
+            return (
+              <div key={r.page} onClick={()=>go(r.page)} className={clsx('nav-item mx-1.5 relative', page===r.page && 'active')}>
+                <span className="flex-shrink-0"><Icon size={18}/></span><span className="nav-label">{r.label}</span>
+                {r.page === 'slips' && slipCount > 0 && <span className="ml-auto bg-emerald-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{slipCount}</span>}
+              </div>
+            )
+          })}
           <div className="nav-group-label sidebar-status-text mt-2">INTELLIGENCE</div>
           {intelNav.map(i=>(
             <div key={i.label} onClick={i.action} className="nav-item mx-1.5 border border-emerald-800/20 bg-emerald-900/10 hover:bg-emerald-900/20">
@@ -167,6 +169,13 @@ function AppShell() {
       <Copilot />
     </div>
   )
+}
+
+/* ── Responsive App Shell ── */
+function AppShell() {
+  const isMobile = useIsMobile()
+  if (isMobile) return <MobileShell />
+  return <DesktopShell />
 }
 
 export default function App() {

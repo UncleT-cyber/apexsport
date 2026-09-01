@@ -36,3 +36,82 @@ html,body,#root{height:100%;margin:0;overflow:hidden}
 .nav-group-label{font-size:9px;font-weight:700;letter-spacing:0.08em;color:var(--text-muted);padding:0.6rem 0.6rem 0.2rem;text-transform:uppercase}
 ::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+/* ── MOBILE SHELL ── */
+@media (max-width: 767px) {
+  .app-root {
+    margin: 0 !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    border-radius: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+  .desktop-sidebar { display: none !important; }
+}
+
+/* Floating bottom nav capsule */
+.mobile-nav-capsule {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  padding: 0 12px;
+  padding-bottom: env(safe-area-inset-bottom, 8px);
+  pointer-events: none;
+}
+.mobile-nav-capsule > div {
+  pointer-events: auto;
+  background: rgba(22, 27, 34, 0.85);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(48, 54, 61, 0.6);
+  border-radius: 20px;
+  box-shadow: 0 -2px 20px rgba(0, 0, 0, 0.4), 0 0 1px rgba(48, 54, 61, 0.5);
+  margin-bottom: env(safe-area-inset-bottom, 4px);
+}
+
+/* Nav item touch target */
+.mobile-nav-item {
+  min-width: 48px;
+  min-height: 44px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Hide scrollbar utility */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Snap scrolling */
+.snap-x { scroll-snap-type: x mandatory; }
+.snap-start { scroll-snap-align: start; }
+
+/* Slide up animation for sheets */
+@keyframes slide-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+.animate-slide-up {
+  animation: slide-up 0.25s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Safe area bottom padding */
+.h-safe-bottom {
+  height: env(safe-area-inset-bottom, 16px);
+}
+
+/* Mobile Copilot overrides */
+@media (max-width: 767px) {
+  .copilot-mobile {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    border-radius: 0;
+    max-width: 100vw;
+    max-height: 100vh;
+    max-height: 100dvh;
+    height: 100vh;
+    height: 100dvh;
+  }
+}
