@@ -78,7 +78,7 @@ export function MobileShell() {
           <Route path="slips" element={<SlipsMobile />} />
           <Route path="analytics" element={<LazyLoadPage page="analytics" />} />
           <Route path="backtest" element={<LazyLoadPage page="backtest" />} />
-          <Route path="settings/*" element={<LazyLoadPage page="settings" />} />
+          <Route path="settings/*" element={<MobileSettings />} />
           <Route path="profile" element={<LazyLoadPage page="profile" />} />
           <Route path="" element={<DashboardMobile />} />
         </Routes>
@@ -1387,6 +1387,113 @@ function SlipsMobile() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/* ── Mobile Settings (iOS-style drill-down) ── */
+type SettingsSection = 'account' | 'profile' | 'strategy' | 'risk' | 'market-data' | 'ai' | 'sportsbooks' | 'notifications' | 'distribution' | 'integrations' | 'subscription' | 'security' | 'session' | 'appearance' | 'advanced'
+
+interface SettingsNavItem {
+  id: SettingsSection
+  label: string
+  icon: string
+  group: string
+}
+
+const SETTINGS_NAV: SettingsNavItem[] = [
+  { id: 'account', label: 'Account', icon: '👤', group: 'ACCOUNT' },
+  { id: 'profile', label: 'Profile', icon: '👤', group: 'ACCOUNT' },
+  { id: 'strategy', label: 'Strategy', icon: '🎯', group: 'INTELLIGENCE' },
+  { id: 'risk', label: 'Risk', icon: '🛡️', group: 'INTELLIGENCE' },
+  { id: 'market-data', label: 'Market Data', icon: '🏆', group: 'DATA & AI' },
+  { id: 'ai', label: 'AI & Models', icon: '🧠', group: 'DATA & AI' },
+  { id: 'sportsbooks', label: 'Sportsbooks', icon: '🏢', group: 'CONNECTIONS' },
+  { id: 'notifications', label: 'Notifications', icon: '🔔', group: 'CONNECTIONS' },
+  { id: 'distribution', label: 'Distribution', icon: '📤', group: 'CONNECTIONS' },
+  { id: 'integrations', label: 'Integrations', icon: '🧩', group: 'CONNECTIONS' },
+  { id: 'subscription', label: 'Subscription', icon: '💳', group: 'SYSTEM' },
+  { id: 'security', label: 'Security', icon: '🔒', group: 'SYSTEM' },
+  { id: 'session', label: 'Session', icon: '🚪', group: 'SYSTEM' },
+  { id: 'appearance', label: 'Appearance', icon: '🎨', group: 'SYSTEM' },
+  { id: 'advanced', label: 'Advanced', icon: '⚙️', group: 'SYSTEM' },
+]
+
+const SETTINGS_COMPONENTS: Record<SettingsSection, () => Promise<Record<string, any>>> = {
+  account: () => import('../pages/Settings/AccountSettings'),
+  profile: () => import('../pages/Settings/ProfileSettings'),
+  strategy: () => import('../pages/Settings/StrategySettings'),
+  risk: () => import('../pages/Settings/RiskSettings'),
+  'market-data': () => import('../pages/Settings/MarketDataSettings'),
+  ai: () => import('../pages/Settings/AISettings'),
+  sportsbooks: () => import('../pages/Settings/SportsbooksSettings'),
+  notifications: () => import('../pages/Settings/NotificationSettings'),
+  distribution: () => import('../pages/Settings/DistributionSettings'),
+  integrations: () => import('../pages/Settings/IntegrationSettings'),
+  subscription: () => import('../pages/Settings/SubscriptionSettings'),
+  security: () => import('../pages/Settings/SecuritySettings'),
+  session: () => import('../pages/Settings/SessionSettings'),
+  appearance: () => import('../pages/Settings/AppearanceSettings'),
+  advanced: () => import('../pages/Settings/AdvancedSettings'),
+}
+
+const SETTINGS_GROUPS = ['ACCOUNT', 'INTELLIGENCE', 'DATA & AI', 'CONNECTIONS', 'SYSTEM']
+
+function MobileSettings() {
+  const [active, setActive] = useState<SettingsSection | null>(null)
+  const [Content, setContent] = useState<React.ComponentType | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const handleSelect = async (id: SettingsSection) => {
+    setActive(id)
+    setLoading(true)
+    try {
+      const m = await SETTINGS_COMPONENTS[id]()
+      const Comp = m.default || m[Object.keys(m).find(k => k !== '__esModule') || '']
+      setContent(() => Comp)
+    } catch { setContent(() => () => <div className="text-xs text-gray-500 p-4">Failed to load</div>) }
+    setLoading(false)
+  }
+
+  const handleBack = () => { setActive(null); setContent(null) }
+
+  if (active && Content) {
+    return (
+      <div className="p-4 space-y-3">
+        <button onClick={handleBack} className="flex items-center gap-1 text-xs text-emerald-400 font-bold">
+          <span>←</span> <span>Settings</span>
+        </button>
+        <div className="text-sm font-bold tracking-wider text-white">{SETTINGS_NAV.find(n => n.id === active)?.label}</div>
+        {loading ? (
+          <div className="text-xs text-gray-500 py-8 text-center">Loading…</div>
+        ) : (
+          <div className="overflow-auto"><Content /></div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="p-4 space-y-4">
+      <h2 className="text-sm font-bold tracking-wider text-white">SETTINGS</h2>
+      {SETTINGS_GROUPS.map(group => {
+        const items = SETTINGS_NAV.filter(n => n.group === group)
+        if (!items.length) return null
+        return (
+          <div key={group}>
+            <div className="text-[9px] font-bold tracking-wider text-gray-600 uppercase mb-1 px-1">{group}</div>
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] divide-y divide-[var(--border)]">
+              {items.map(item => (
+                <button key={item.id} onClick={() => handleSelect(item.id)} className="w-full flex items-center gap-3 px-3 py-3 text-left active:bg-[var(--bg-tertiary)]">
+                  <span className="text-base">{item.icon}</span>
+                  <span className="text-xs font-medium text-white flex-1">{item.label}</span>
+                  <span className="text-gray-600 text-xs">›</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
