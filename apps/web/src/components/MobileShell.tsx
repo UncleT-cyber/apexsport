@@ -1119,11 +1119,31 @@ function PredictionsMobile() {
   )
 }
 
-/* ── Mobile Slips ── */
+/* ── Mobile Slips (full desktop parity) ── */
 function SlipsMobile() {
-  const { items, remove, clear } = useSlipCart()
+  const { items, add: slipAdd, remove: slipRemove, clear: slipClear } = useSlipCart()
+  const [sport, setSport] = useState('football')
+  const [sportsbook, setSportsbook] = useState('sportybet')
   const [building, setBuilding] = useState(false)
+  const [validateState, setValidateState] = useState<any>(null)
   const [builtSlip, setBuiltSlip] = useState<any>(null)
+  const [showPicker, setShowPicker] = useState(false)
+  const [selectedPredIds, setSelectedPredIds] = useState<Set<string>>(new Set())
+
+  const { data: currentData } = usePolling(() => import('../services/auth').then(m => m.authFetch('/api/slips/current').then(r => r.json().catch(() => null))), 3000)
+  const currentSlip: any = currentData?.slip || null
+  const currentMeta: any = currentData?.meta || {}
+  const staleness: any[] = currentData?.staleness || []
+
+  const { data: predictionsData } = usePolling(() => import('../services/auth').then(m => m.authFetch(`/api/predictions?sport=${sport}&limit=20`).then(r => r.json().catch(() => null))), 5000)
+  const predictions: any[] = predictionsData?.predictions || []
+
+  const { data: persistedData } = usePolling(() => import('../services/auth').then(m => m.authFetch('/api/slips').then(r => r.json().catch(() => null))), 4000)
+  const persisted: any[] = Array.isArray(persistedData) ? persistedData : (persistedData?.slips || [])
+  const [detailSlip, setDetailSlip] = useState<any>(null)
+
+  const { data: slipPreview } = usePolling(() => import('../services/auth').then(m => m.authFetch(`/api/slips/optimize?sport=${sport}`).then(r => r.json().catch(() => null))), 5000)
+  const optimizedSlip = slipPreview?.slip || null
 
   const handleBuild = async () => {
     setBuilding(true)
@@ -1131,70 +1151,241 @@ function SlipsMobile() {
     const r = await authFetch('/api/slips/current/build', { method: 'POST' })
     const j = await r.json()
     setBuilding(false)
-    if (j.slip) setBuiltSlip(j.slip)
+    if (j.error) return
+    if (j.slip) { setBuiltSlip(j.slip); setDetailSlip(j.slip) }
   }
+
+  const handleValidate = async () => {
+    const { authFetch } = await import('../services/auth')
+    const r = await authFetch('/api/slips/current/validate', { method: 'POST' })
+    setValidateState(await r.json())
+  }
+
+  const handleCreateCustom = async () => {
+    if (!selectedPredIds.size) return
+    const { authFetch } = await import('../services/auth')
+    const r = await authFetch('/api/slips/from-prediction-ids', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prediction_ids: Array.from(selectedPredIds), sportsbook })
+    })
+    const j = await r.json()
+    if (j.slip) { setBuiltSlip(j.slip); setDetailSlip(j.slip) }
+    setSelectedPredIds(new Set())
+  }
+
+  const totalOdds = currentSlip?.total_odds || currentSlip?.selections?.reduce((a: number, s: any) => a * (s.odds || 1), 1)
 
   return (
     <div className="p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-bold tracking-wider text-white">MY SLIP</h2>
-        <span className="text-[10px] text-gray-500">{items.length} selection{items.length !== 1 ? 's' : ''}</span>
+      {/* Header + selectors */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-bold tracking-wider text-white">BET SLIP BUILDER</h2>
+          <span className="text-[10px] text-gray-500">{items.length} selection{items.length !== 1 ? 's' : ''}</span>
+        </div>
+        <div className="flex gap-2">
+          <select value={sport} onChange={e => setSport(e.target.value)} className="flex-1 bg-[var(--bg-secondary)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-gray-300">
+            <option value="football">⚽ Football</option>
+            <option value="basketball">🏀 Basketball</option>
+          </select>
+          <select value={sportsbook} onChange={e => setSportsbook(e.target.value)} className="flex-1 bg-[var(--bg-secondary)] border border-[var(--border)] rounded-xl px-3 py-2 text-xs text-gray-300">
+            <option value="sportybet">SportyBet</option>
+            <option value="bet9ja">Bet9ja</option>
+            <option value="betway">Betway</option>
+            <option value="draftkings">DraftKings</option>
+            <option value="fanduel">FanDuel</option>
+            <option value="generic">Generic</option>
+          </select>
+        </div>
       </div>
 
-      {items.length === 0 ? (
-        <div className="p-8 text-center rounded-xl border border-dashed border-[var(--border)] bg-[var(--bg-secondary)]">
-          <ShoppingCart size={32} className="text-gray-600 mx-auto mb-2" />
-          <div className="text-sm text-gray-500 mb-1">Your slip is empty</div>
-          <div className="text-[11px] text-gray-600">Browse Predictions and tap <span className="text-emerald-400">ADD TO SLIP</span></div>
+      {/* MY SLIP — Current workspace */}
+      <div className="p-3 rounded-xl border-2 border-emerald-800/40 bg-gradient-to-r from-emerald-950/20 to-[var(--bg-secondary)] space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="text-xs font-bold tracking-widest text-white flex items-center gap-2">
+            MY SLIP <span className="px-1.5 py-0.5 rounded-lg bg-emerald-600 text-white text-[10px]">{currentSlip?.selections?.length || 0}</span>
+          </div>
+          <div className="flex gap-1.5">
+            <button onClick={handleValidate} className="px-2 py-1 rounded-lg border border-[var(--border)] text-[10px] text-gray-300">VALIDATE</button>
+            <button onClick={handleBuild} disabled={!currentSlip?.selections?.length || building} className={clsx('px-2 py-1 rounded-lg text-[10px] font-bold', currentSlip?.selections?.length ? 'bg-emerald-600 text-white' : 'bg-[#21262d] text-gray-600')}>{building ? '…' : 'BUILD'}</button>
+            <button onClick={() => { slipClear(); import('../services/auth').then(m => m.authFetch('/api/slips/current/clear', { method: 'POST' }).catch(() => {})) }} className="px-2 py-1 rounded-lg border border-red-900/50 text-[10px] text-red-400">CLEAR</button>
+          </div>
         </div>
-      ) : (
-        <>
-          <div className="space-y-2">
-            {items.map(item => (
-              <div key={item.predictionId} className="p-3 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]">
-                <div className="flex items-center justify-between">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-bold text-white truncate">{item.predictionId.slice(0, 16)}…</div>
-                    <div className="text-[10px] text-gray-500">{item.sport || 'football'} • added {new Date(item.addedAt).toLocaleTimeString()}</div>
+
+        {!currentSlip?.selections?.length ? (
+          <div className="text-xs text-gray-600 py-4 text-center border border-dashed border-[var(--border)] rounded-xl">
+            <div className="text-sm text-gray-500 mb-1">Your slip is empty</div>
+            <div className="text-[11px]">Browse <span className="text-emerald-400">Predictions</span> and tap <span className="text-white">ADD TO SLIP</span></div>
+          </div>
+        ) : (
+          <>
+            {/* Staleness warnings */}
+            {staleness.length > 0 && (
+              <div className="p-2 rounded-lg bg-yellow-900/20 border border-yellow-800/30 text-[10px] text-yellow-400">
+                ⚠ STALE: {staleness.length} selection(s) — odds may have changed
+              </div>
+            )}
+            {/* Validation state */}
+            {validateState && !validateState.valid && (
+              <div className="p-2 rounded-lg bg-red-900/20 border border-red-800/30 text-[10px] text-red-400">
+                {validateState.errors?.join('; ')}
+              </div>
+            )}
+            {validateState?.valid && (
+              <div className="p-1.5 rounded-lg bg-emerald-900/20 border border-emerald-800/30 text-[10px] text-emerald-400">
+                ✓ VALID — correlation {currentMeta.correlation} • risk {currentMeta.aggregate_risk}
+              </div>
+            )}
+            {/* Selection list */}
+            <div className="space-y-1.5">
+              {currentSlip.selections.map((s: any, i: number) => (
+                <div key={s.prediction_id || i} className="p-2 rounded-xl border border-[var(--border)] bg-[var(--bg-primary)]">
+                  <div className="flex items-center justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 text-xs">
+                        <span className="text-white font-bold truncate">{s.event_label}</span>
+                        <span className={clsx('text-[9px] font-bold px-1 py-0.5 rounded-lg', s.selection === 'HOME' ? 'bg-emerald-900/30 text-emerald-400' : s.selection === 'AWAY' ? 'bg-red-900/30 text-red-400' : 'bg-yellow-900/30 text-yellow-400')}>{s.selection}</span>
+                      </div>
+                      <div className="text-[10px] text-gray-500 mt-0.5">
+                        {s.sport} • {s.competition} • Odds {s.odds?.toFixed(2)} • Apex {(s.calibrated_probability * 100 || 0).toFixed(1)}% • Edge {(s.edge * 100 || 0).toFixed(1)}%
+                      </div>
+                    </div>
+                    <button onClick={() => { slipRemove(s.prediction_id); import('../services/auth').then(m => m.authFetch(`/api/slips/current/remove?prediction_id=${encodeURIComponent(s.prediction_id)}`, { method: 'POST' }).catch(() => {})) }} className="ml-2 px-2 py-1 rounded-lg bg-red-900/20 border border-red-800/30 text-[10px] text-red-400">✕</button>
                   </div>
-                  <button
-                    onClick={() => remove(item.predictionId)}
-                    className="px-2 py-1 rounded-lg bg-red-900/20 border border-red-800/30 text-red-400 text-[10px] font-bold"
-                  >
-                    REMOVE
-                  </button>
+                </div>
+              ))}
+            </div>
+            {/* Slip summary */}
+            <div className="p-2 rounded-lg bg-[#0d1117] border border-[var(--border)] text-[10px]">
+              <div className="flex justify-between"><span className="text-gray-500">Combined Odds</span><span className="text-white font-mono font-bold">{totalOdds?.toFixed(2) || '—'}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Aggregate Risk</span><span className={clsx(currentMeta.aggregate_risk === 'LOW' ? 'text-emerald-400' : 'text-yellow-400')}>{currentMeta.aggregate_risk || '—'}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Correlation</span><span className="text-white">{currentMeta.correlation ?? '—'}</span></div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Built slip display */}
+      {builtSlip && (
+        <div className="p-3 rounded-xl border border-emerald-800/30 bg-emerald-900/10 space-y-2">
+          <div className="text-[10px] tracking-widest text-emerald-400 font-bold">SLIP BUILT — {builtSlip.selections?.length || 0} legs</div>
+          <div className="text-xs text-white">Odds {builtSlip.total_odds?.toFixed(2)} • Risk {builtSlip.risk_level || '—'}</div>
+          <div className="text-[10px] text-gray-500">{builtSlip.id}</div>
+        </div>
+      )}
+
+      {/* Prediction Picker toggle */}
+      <button onClick={() => setShowPicker(v => !v)} className="w-full py-2.5 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] text-xs font-bold text-gray-400 flex items-center justify-between">
+        <span>PREDICTION PICKER ({predictions.length} available)</span>
+        <span className="text-gray-600">{showPicker ? '▲' : '▼'}</span>
+      </button>
+
+      {/* Prediction Picker */}
+      {showPicker && (
+        <div className="space-y-2">
+          {!predictions.length ? (
+            <div className="text-xs text-gray-600 py-4 text-center border border-dashed border-[var(--border)] rounded-xl">
+              No predictions for {sport} — run a scan first
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-gray-500">{selectedPredIds.size} selected</span>
+                <div className="flex gap-1.5">
+                  <button onClick={handleCreateCustom} disabled={!selectedPredIds.size} className={clsx('px-2 py-1 rounded-lg text-[10px] font-bold', selectedPredIds.size ? 'bg-emerald-600 text-white' : 'bg-[#21262d] text-gray-600')}>CREATE FROM SELECTED</button>
+                  {selectedPredIds.size > 0 && <button onClick={() => setSelectedPredIds(new Set())} className="px-2 py-1 rounded-lg border border-[var(--border)] text-[10px] text-gray-400">clear</button>}
+                </div>
+              </div>
+              <div className="space-y-1.5 max-h-[300px] overflow-auto">
+                {predictions.map((p: any) => {
+                  const pid = p.id || p.fixture_id
+                  const checked = selectedPredIds.has(pid)
+                  return (
+                    <label key={pid} className={clsx('flex items-start gap-2 p-2 rounded-xl border text-xs', checked ? 'bg-[#1a2332] border-emerald-800/30' : 'bg-[var(--bg-primary)] border-[var(--border)]')}>
+                      <input type="checkbox" checked={checked} onChange={e => {
+                        const ns = new Set(selectedPredIds)
+                        if (e.target.checked) ns.add(pid); else ns.delete(pid)
+                        setSelectedPredIds(ns)
+                      }} className="mt-0.5" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-white font-bold truncate">{p.fixture_label}</span>
+                          <span className={clsx('text-[9px] font-bold px-1 py-0.5 rounded-lg', p.selection === 'HOME' ? 'bg-emerald-900/30 text-emerald-400' : p.selection === 'AWAY' ? 'bg-red-900/30 text-red-400' : 'bg-yellow-900/30 text-yellow-400')}>{p.selection}</span>
+                        </div>
+                        <div className="text-[10px] text-gray-500 mt-0.5">{p.competition} • {p.market_odds?.toFixed(2)} @ {(p.calibrated_probability * 100).toFixed(0)}% • edge {(p.edge * 100).toFixed(1)}%</div>
+                      </div>
+                    </label>
+                  )
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Optimized slip */}
+      {optimizedSlip?.selections?.length > 0 && (
+        <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] space-y-2">
+          <div className="text-[10px] tracking-widest text-gray-500 font-bold">OPTIMIZER — {optimizedSlip.selections.length} legs</div>
+          <div className="space-y-1">
+            {optimizedSlip.selections.map((s: any, i: number) => (
+              <div key={i} className="flex items-center justify-between text-[10px] p-1.5 rounded-lg bg-[var(--bg-primary)] border border-[var(--border)]">
+                <span className="text-gray-300 truncate">{s.event_label} <span className={clsx('font-bold', s.selection === 'HOME' ? 'text-emerald-400' : s.selection === 'AWAY' ? 'text-red-400' : 'text-yellow-400')}>{s.selection}</span></span>
+                <span className="text-white font-mono flex-shrink-0 ml-1">{s.odds?.toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+          <div className="text-[10px] text-gray-500">Combined: <span className="text-white font-mono font-bold">{optimizedSlip.total_odds?.toFixed(2)}</span> • Risk: <span className={clsx(optimizedSlip.risk_level === 'LOW' ? 'text-emerald-400' : 'text-yellow-400')}>{optimizedSlip.risk_level}</span></div>
+        </div>
+      )}
+
+      {/* Persisted slips */}
+      <div>
+        <div className="text-[10px] tracking-widest text-gray-500 font-bold mb-2">PERSISTED SLIPS ({persisted.length})</div>
+        {!persisted.length ? (
+          <div className="text-xs text-gray-600 py-4 text-center border border-dashed border-[var(--border)] rounded-xl">No persisted slips yet</div>
+        ) : (
+          <div className="space-y-1.5">
+            {persisted.map((s: any) => (
+              <button key={s.id} onClick={() => setDetailSlip(detailSlip?.id === s.id ? null : s)} className={clsx('w-full text-left p-2 rounded-xl border text-xs', detailSlip?.id === s.id ? 'bg-[#1a2332] border-emerald-800/30' : 'bg-[var(--bg-secondary)] border-[var(--border)]')}>
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[10px] text-gray-500">{s.id.slice(0, 12)}…</span>
+                  <span className={clsx('text-[10px] px-1 py-0.5 rounded-lg border', s.risk_level === 'LOW' ? 'text-emerald-400 border-emerald-800/30' : 'text-yellow-400 border-yellow-800/30')}>{s.risk_level}</span>
+                </div>
+                <div className="text-white font-medium truncate mt-1">{s.selections?.map((x: any) => x.event_label).join(' • ') || '—'}</div>
+                <div className="text-gray-500 text-[10px] mt-0.5">{s.selections?.length || 0} legs • {s.total_odds} odds • {s.status}</div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Persisted slip detail */}
+      {detailSlip && (
+        <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--bg-primary)] space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="text-[10px] tracking-widest text-gray-500 font-bold">SLIP DETAIL — {detailSlip.id?.slice(0, 12)}</div>
+            <button onClick={() => setDetailSlip(null)} className="text-[10px] text-gray-500">✕</button>
+          </div>
+          <div className="space-y-1">
+            {detailSlip.selections?.map((s: any, i: number) => (
+              <div key={i} className="text-[10px] p-1.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border)]">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-white font-bold truncate">{s.event_label}</span>
+                  <span className={clsx('text-[9px] font-bold px-1 py-0.5 rounded-lg', s.selection === 'HOME' ? 'bg-emerald-900/30 text-emerald-400' : s.selection === 'AWAY' ? 'bg-red-900/30 text-red-400' : 'bg-yellow-900/30 text-yellow-400')}>{s.selection}</span>
+                  <span className="text-gray-500 ml-auto">{s.odds?.toFixed(2)}</span>
                 </div>
               </div>
             ))}
           </div>
-
-          <div className="flex gap-2">
-            <button
-              onClick={handleBuild}
-              disabled={building}
-              className={clsx(
-                'flex-1 py-3 rounded-xl text-sm font-bold transition',
-                building ? 'bg-gray-800 text-gray-500' : 'bg-emerald-600 text-white active:bg-emerald-500'
-              )}
-            >
-              {building ? 'BUILDING…' : 'BUILD SLIP'}
-            </button>
-            <button
-              onClick={clear}
-              className="px-4 py-3 rounded-xl border border-red-900/50 text-red-400 text-sm font-bold"
-            >
-              CLEAR
-            </button>
+          <div className="text-[10px] text-gray-500">Combined: <span className="text-white font-mono font-bold">{detailSlip.total_odds}</span> • {detailSlip.selections?.length || 0} legs • {detailSlip.status}</div>
+          <div className="flex gap-1.5">
+            <button onClick={async () => { const { authFetch } = await import('../services/auth'); window.open(`/api/slips/${detailSlip.id}/export/pdf`, '_blank') }} className="flex-1 py-1.5 rounded-lg bg-[#21262d] border border-[var(--border)] text-[10px] text-white">PRINT</button>
+            <button onClick={async () => { const { authFetch } = await import('../services/auth'); const r = await authFetch(`/api/slips/${detailSlip.id}/export?sportsbook=${sportsbook}`, { method: 'POST' }); const j = await r.json(); alert(j.error ? `${j.status}: ${j.error}` : JSON.stringify(j, null, 2)) }} className="flex-1 py-1.5 rounded-lg bg-emerald-600 text-[10px] text-white">EXPORT</button>
+            <button onClick={async () => { const { authFetch } = await import('../services/auth'); await authFetch(`/api/slips/${detailSlip.id}`, { method: 'DELETE' }); setDetailSlip(null) }} className="py-1.5 px-2 rounded-lg border border-red-900/50 text-[10px] text-red-400">DEL</button>
           </div>
-
-          {builtSlip && (
-            <div className="p-3 rounded-xl border border-emerald-800/30 bg-emerald-900/10 space-y-2">
-              <div className="text-[10px] tracking-widest text-emerald-400 font-bold">SLIP BUILT</div>
-              <div className="text-xs text-white">{builtSlip.selections?.length || 0} legs • Odds {builtSlip.total_odds?.toFixed(2)}</div>
-              <div className="text-[10px] text-gray-500">Risk: {builtSlip.risk_level || '—'} • {builtSlip.id}</div>
-            </div>
-          )}
-        </>
+        </div>
       )}
     </div>
   )
