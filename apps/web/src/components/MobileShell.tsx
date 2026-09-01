@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useLocation, Routes, Route } from 'react-router-dom'
 import { useAuth } from '../services/auth'
 import { useSlipCart } from '../services/slipCart'
@@ -674,128 +674,315 @@ function MobileInspectorSheet({ predId, onClose }: { predId: string; onClose: ()
   )
 }
 
-/* ── Mobile Scanner ── */
+/* ── Mobile Scanner (full desktop parity) ── */
+const PIPELINE = ['DATA','FEATURES','MATCH_CONTEXT','FORM','TEAM_STRENGTH','AVAILABILITY','MATCHUP','AI_BRAIN','ENSEMBLE','CALIBRATION','VALUE','RISK','PREDICTION']
+const CATEGORY_ICONS: Record<string,string> = { DATA:'📡', FEATURES:'📊', CONTEXT:'🌍', FORM:'📈', STRENGTH:'💪', AVAILABILITY:'🏥', MATCHUP:'⚔️', AI_BRAIN:'🧠', ENSEMBLE:'🔗', CALIBRATION:'🎯', VALUE:'💎', RISK:'⚖️', PREDICTION:'⚡', SCANNER:'🔍' }
+
 function ScannerMobile() {
   const [sport, setSport] = useState<'football' | 'basketball'>('football')
   const [league, setLeague] = useState('All Leagues')
   const [leagues, setLeagues] = useState<string[]>([])
   const [scanning, setScanning] = useState(false)
-  const [results, setResults] = useState<any>(null)
+  const [state, setState] = useState<any>(null)
+  const [elapsed, setElapsed] = useState(0)
+  const startRef = useRef<number | null>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const animRef = useRef<number>(0)
+  const pulseRef = useRef(0)
+  const [showRejection, setShowRejection] = useState(false)
+  const [selectedRejection, setSelectedRejection] = useState<any>(null)
+  const [rejectionData, setRejectionData] = useState<any>(null)
+  const [expandedPipeline, setExpandedPipeline] = useState(false)
+  const [expandedEvents, setExpandedEvents] = useState(false)
 
   useEffect(() => {
     import('../services/auth').then(m => m.authFetch(`/api/scanner/leagues?sport=${sport}`).then(r => r.json()).then(d => setLeagues(d.leagues || [])).catch(() => {}))
   }, [sport])
 
+  const { data: stateData } = usePolling(() => import('../services/auth').then(m => m.authFetch(`/api/scanner/state?sport=${sport}&league=${encodeURIComponent(league)}`).then(r => r.json())), 1500)
+  useEffect(() => { if (stateData) { setState(stateData); setScanning((stateData as any).is_scanning) } }, [stateData])
+
   useEffect(() => {
-    const poll = async () => {
-      const { authFetch } = await import('../services/auth')
-      const r = await authFetch(`/api/scanner/state?sport=${sport}&league=${encodeURIComponent(league)}`).then(r => r.json().catch(() => null))
-      if (r) {
-        setScanning(r.is_scanning)
-        if (r.state === 'COMPLETE') setResults(r)
-      }
+    if (showRejection && state?.scan_run_id) {
+      import('../services/auth').then(m => m.authFetch(`/api/scanner/rejections?scan_run_id=${state.scan_run_id}`).then(r => r.json()).then(setRejectionData).catch(() => {}))
+    } else if (showRejection) {
+      import('../services/auth').then(m => m.authFetch('/api/scanner/rejections').then(r => r.json()).then(setRejectionData).catch(() => {}))
     }
-    poll()
-    const id = setInterval(poll, 2000)
-    return () => clearInterval(id)
+  }, [showRejection, state?.scan_run_id])
+
+  const handleEvent = useCallback((e: any) => {
+    const t = e.event_type || e.event || ''
+    if (t === 'SCAN_STARTED') { setScanning(true); startRef.current = Date.now() }
+    if (t === 'SCAN_COMPLETED' || t === 'SCAN_FAILED') { setScanning(false); startRef.current = null }
+    if (String(t).startsWith('SCAN')) {
+      import('../services/auth').then(m => m.authFetch(`/api/scanner/state?sport=${sport}&league=${encodeURIComponent(league)}`).then(r => r.json()).then(d => { setState(d); setScanning(d.is_scanning) }).catch(() => {}))
+    }
   }, [sport, league])
+  useWebSocket(handleEvent)
+
+  useEffect(() => {
+    if (!scanning) { setElapsed(0); return }
+    const start = startRef.current || Date.now()
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000)
+    return () => clearInterval(id)
+  }, [scanning])
+
+  useEffect(() => {
+    const canvas = canvasRef.current; if (!canvas) return
+    const ctx = canvas.getContext('2d'); if (!ctx) return
+    const size = 280; canvas.width = size * 2; canvas.height = size * 2; ctx.scale(2, 2)
+    const cx = size / 2, cy = size / 2, maxR = size / 2 - 10
+    let sweep = 0, frame = 0
+    const draw = () => {
+      ctx.clearRect(0, 0, size, size); frame++; const active = scanning
+      for (let i = 1; i <= 4; i++) { ctx.beginPath(); ctx.arc(cx, cy, (maxR / 4) * i, 0, Math.PI * 2); ctx.strokeStyle = 'rgba(88,166,255,0.08)'; ctx.lineWidth = 1; ctx.stroke() }
+      ctx.strokeStyle = 'rgba(88,166,255,0.06)'; ctx.lineWidth = 1
+      for (let a = 0; a < 8; a++) { const ang = (a * Math.PI) / 4; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(ang) * maxR, cy + Math.sin(ang) * maxR); ctx.stroke() }
+      if (active) {
+        sweep += 0.03; const g = ctx.createConicGradient(sweep, cx, cy); g.addColorStop(0, 'rgba(34,197,94,0.3)'); g.addColorStop(0.15, 'rgba(34,197,94,0.05)'); g.addColorStop(0.3, 'transparent'); g.addColorStop(1, 'transparent'); ctx.beginPath(); ctx.arc(cx, cy, maxR, 0, Math.PI * 2); ctx.fillStyle = g; ctx.fill()
+      }
+      if (active) {
+        pulseRef.current = (pulseRef.current + 1) % 60
+        for (let i = 0; i < 3; i++) { const prog = ((pulseRef.current + i * 20) % 60) / 60; const r = prog * maxR; const alpha = 0.4 * (1 - prog); ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.strokeStyle = `rgba(34,197,94,${alpha})`; ctx.lineWidth = 1.5; ctx.stroke() }
+      }
+      const breathe = Math.sin(frame * 0.03) * 0.3 + 0.7; const core = active ? 8 : 5
+      const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, core * 3); glow.addColorStop(0, active ? `rgba(34,197,94,${0.6 * breathe})` : `rgba(88,166,255,${0.2 * breathe})`); glow.addColorStop(1, 'transparent'); ctx.beginPath(); ctx.arc(cx, cy, core * 3, 0, Math.PI * 2); ctx.fillStyle = glow; ctx.fill()
+      ctx.beginPath(); ctx.arc(cx, cy, core, 0, Math.PI * 2); ctx.fillStyle = active ? '#22c55e' : 'rgba(88,166,255,0.4)'; ctx.fill()
+      ctx.beginPath(); ctx.arc(cx, cy, core + 3, 0, Math.PI * 2); ctx.strokeStyle = active ? `rgba(34,197,94,${0.5 * breathe})` : 'rgba(88,166,255,0.15)'; ctx.lineWidth = 1.5; ctx.stroke()
+      if (active && state?.fixtures) {
+        state.fixtures.forEach((fx: any, i: number) => { const ang = (i / state.fixtures.length) * Math.PI * 2 - Math.PI / 2; const sx = cx + Math.cos(ang) * maxR * 0.6; const sy = cy + Math.sin(ang) * maxR * 0.6; let color = 'rgba(110,118,129,0.4)'; if (fx.status === 'COMPLETE') color = '#3fb950'; else if (fx.status === 'FETCHING') color = '#58a6ff'; else if (fx.status === 'ANALYZING') color = '#d29922'; else if (fx.status === 'FAILED') color = '#f85149'; ctx.beginPath(); ctx.arc(sx, sy, 3, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill() })
+      }
+      animRef.current = requestAnimationFrame(draw)
+    }
+    draw(); return () => cancelAnimationFrame(animRef.current)
+  }, [scanning, state])
 
   const handleScan = async () => {
     const { authFetch } = await import('../services/auth')
     const r = await authFetch(`/api/scanner/scan-now?sport=${sport}&league=${encodeURIComponent(league)}`, { method: 'POST' })
     const d = await r.json()
-    if (d.status === 'started') { setScanning(true); setResults(null) }
+    if (d.status === 'started') { setScanning(true); startRef.current = Date.now() }
   }
+
+  const currentState = state?.state || 'IDLE'
+  const isActive = scanning || state?.is_scanning
 
   return (
     <div className="p-4 space-y-4">
-      <h2 className="text-sm font-bold tracking-wider text-white">SCANNER</h2>
+      {/* Radar + Status */}
+      <div className="flex flex-col items-center gap-2">
+        <canvas ref={canvasRef} className="w-[280px] h-[280px]" />
+        <div className="text-center">
+          <div className={clsx('text-xs font-bold tracking-wider', isActive ? 'text-emerald-400' : currentState === 'COMPLETE' ? 'text-emerald-400' : currentState === 'ERROR' ? 'text-red-400' : 'text-gray-500')}>
+            {isActive ? 'SCANNING FIXTURES' : currentState === 'COMPLETE' ? 'SCAN COMPLETE' : currentState === 'ERROR' ? 'ERROR' : 'APEX READY'}
+          </div>
+          {isActive && state?.current_fixture && <div className="text-[10px] text-gray-500 mt-1">Processing: {state.current_fixture}</div>}
+        </div>
+      </div>
 
-      {/* Step 1: Sport */}
+      {/* Sport selector */}
       <div className="space-y-2">
         <label className="text-[10px] tracking-widest text-gray-500 font-bold">1. SELECT SPORT</label>
         <div className="flex gap-2">
           {['football', 'basketball'].map(s => (
-            <button
-              key={s}
-              onClick={() => { setSport(s as any); setLeague('All Leagues') }}
-              className={clsx(
-                'flex-1 py-2.5 rounded-xl text-xs font-bold transition border',
-                sport === s
-                  ? 'bg-emerald-600 border-emerald-500 text-white'
-                  : 'bg-[var(--bg-secondary)] border-[var(--border)] text-gray-400'
-              )}
-            >
+            <button key={s} onClick={() => { setSport(s as any); setLeague('All Leagues') }} className={clsx('flex-1 py-2.5 rounded-xl text-xs font-bold transition border', sport === s ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-[var(--bg-secondary)] border-[var(--border)] text-gray-400')}>
               {s === 'football' ? '⚽ Football' : '🏀 Basketball'}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Step 2: League */}
+      {/* League selector */}
       <div className="space-y-2">
         <label className="text-[10px] tracking-widest text-gray-500 font-bold">2. SELECT LEAGUE</label>
         <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 scrollbar-hide">
           {['All Leagues', ...leagues].map(l => (
-            <button
-              key={l}
-              onClick={() => setLeague(l)}
-              className={clsx(
-                'flex-shrink-0 px-3 py-2 rounded-xl text-[11px] font-bold whitespace-nowrap transition border',
-                league === l
-                  ? 'bg-emerald-600 border-emerald-500 text-white'
-                  : 'bg-[var(--bg-secondary)] border-[var(--border)] text-gray-400'
-              )}
-            >
+            <button key={l} onClick={() => setLeague(l)} className={clsx('flex-shrink-0 px-3 py-2 rounded-xl text-[11px] font-bold whitespace-nowrap transition border', league === l ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-[var(--bg-secondary)] border-[var(--border)] text-gray-400')}>
               {l}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Step 3: Scan */}
-      <button
-        onClick={handleScan}
-        disabled={scanning}
-        className={clsx(
-          'w-full py-3 rounded-xl text-sm font-bold tracking-wider transition',
-          scanning ? 'bg-gray-800 text-gray-500' : 'bg-emerald-600 text-white active:bg-emerald-500'
-        )}
-      >
-        {scanning ? '● SCANNING…' : '▶ START SCAN'}
+      {/* Stat cards */}
+      <div className="grid grid-cols-4 gap-2">
+        <MobileStat label="FIXTURES" value={`${state?.fixtures_completed || 0}/${state?.fixtures_total || state?.instrument_universe?.scanner_universe_size || 0}`} />
+        <MobileStat label="PREDICTIONS" value={String(state?.predictions_generated || 0)} color="text-emerald-400" />
+        <MobileStat label="REJECTED" value={String(state?.candidates_rejected || 0)} color="text-red-400" />
+        <MobileStat label="DURATION" value={isActive ? `${elapsed}s` : state?.scan_duration_ms ? `${(state.scan_duration_ms / 1000).toFixed(1)}s` : '—'} />
+      </div>
+
+      {/* Universe/Value/Total */}
+      <div className="flex items-center gap-3 text-[10px] flex-wrap">
+        <span className="text-gray-500">UNIVERSE: <span className="text-gray-300">{(state?.instrument_universe?.scanner_universe_size ?? state?.available_universe ?? state?.fixtures_total ?? 0)}</span></span>
+        <span className="text-gray-500">VALUE: <span className="text-emerald-400">{state?.value_opportunities || 0}</span></span>
+        <span className="text-gray-500">SCANS: <span className="text-gray-300">{state?.total_scans || 0}</span></span>
+      </div>
+
+      {/* Scan button */}
+      <button onClick={handleScan} disabled={!!isActive} className={clsx('w-full py-3 rounded-xl text-sm font-bold tracking-wider transition', isActive ? 'bg-gray-800 text-gray-500' : 'bg-emerald-600 text-white active:bg-emerald-500')}>
+        {isActive ? `● SCANNING… ${elapsed}s` : '▶ START SCAN'}
       </button>
 
-      {/* Results */}
-      {results && (
-        <div className="space-y-3">
-          <div className="grid grid-cols-3 gap-2">
-            <div className="p-2.5 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] text-center">
-              <div className="text-[9px] text-gray-500">FIXTURES</div>
-              <div className="text-lg font-bold text-white">{results.fixtures_total || 0}</div>
-            </div>
-            <div className="p-2.5 rounded-xl border border-emerald-800/30 bg-emerald-900/10 text-center">
-              <div className="text-[9px] text-gray-500">PREDICTIONS</div>
-              <div className="text-lg font-bold text-emerald-400">{results.predictions_generated || 0}</div>
-            </div>
-            <div className="p-2.5 rounded-xl border border-red-800/30 bg-red-900/10 text-center">
-              <div className="text-[9px] text-gray-500">REJECTED</div>
-              <div className="text-lg font-bold text-red-400">{results.candidates_rejected || 0}</div>
-            </div>
-          </div>
+      {/* Rejection Analysis toggle */}
+      {state && !isActive && (state.candidates_rejected > 0 || state.predictions_generated > 0) && (
+        <button onClick={() => setShowRejection(v => !v)} className="w-full py-2 rounded-xl border border-yellow-800/30 bg-yellow-900/10 text-yellow-400 text-xs font-bold">
+          {showRejection ? 'HIDE REJECTION ANALYSIS' : `VIEW REJECTION — ${state.candidates_rejected} rejected`}
+        </button>
+      )}
 
-          {/* Prediction cards */}
-          {results.recent_predictions?.length > 0 && (
-            <div>
-              <h3 className="text-[10px] tracking-widest text-gray-500 font-bold mb-2">RESULTS</h3>
-              <div className="space-y-2">
-                {results.recent_predictions.map((p: any, i: number) => (
-                  <MobilePredictionCard key={i} pred={p} />
-                ))}
+      {/* Scan summary */}
+      {state && state.state === 'COMPLETE' && (
+        <div className="grid grid-cols-3 gap-2 text-[10px]">
+          <div className="p-2 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] text-center">
+            <div className="text-gray-500 tracking-wider">FIXTURES</div>
+            <div className="text-white font-bold text-sm mt-0.5">{state.stage_counts?.discovered ?? state.available_universe ?? state.fixtures_total}</div>
+            <div className="text-gray-600">Eligible {state.stage_counts?.eligible ?? state.eligible_count ?? 0}</div>
+          </div>
+          <div className="p-2 rounded-xl border border-emerald-800/20 bg-emerald-900/10 text-center">
+            <div className="text-gray-500 tracking-wider">PREDICTIONS</div>
+            <div className="text-emerald-400 font-bold text-sm mt-0.5">{state.predictions_generated}</div>
+            <div className="text-gray-600">Value {state.value_opportunities}</div>
+          </div>
+          <div className="p-2 rounded-xl border border-red-800/20 bg-red-900/10 text-center">
+            <div className="text-gray-500 tracking-wider">REJECTED</div>
+            <div className="text-red-400 font-bold text-sm mt-0.5">{state.candidates_rejected}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Rejection Analysis Panel */}
+      {showRejection && (
+        <div className="rounded-xl border border-yellow-800/30 bg-[#0d1117] p-3 space-y-3">
+          <div className="text-[11px] font-bold tracking-widest text-yellow-400">REJECTION ANALYSIS — {rejectionData?.aggregate?.total ?? state.candidates_rejected}</div>
+          {/* Aggregate */}
+          <div className="grid grid-cols-2 gap-2">
+            {rejectionData?.aggregate ? Object.entries(rejectionData.aggregate.by_code || {}).map(([code, cnt]: any) => (
+              <div key={code} className={clsx('p-2 rounded-xl border text-center', code === 'TECHNICAL_FAILURE' ? 'bg-red-900/10 border-red-800/30' : code === 'LOW_VALUE' ? 'bg-yellow-900/10 border-yellow-800/30' : 'bg-[var(--bg-secondary)] border-[var(--border)]')}>
+                <div className="text-[9px] font-bold tracking-wider" style={{ color: code === 'TECHNICAL_FAILURE' ? '#f85149' : code === 'LOW_VALUE' ? '#d29922' : '#e3b341' }}>{code}</div>
+                <div className="text-white font-bold text-sm mt-0.5">{cnt as number}</div>
               </div>
+            )) : <div className="text-[11px] text-gray-500 col-span-2">Loading…</div>}
+          </div>
+          {/* Individual */}
+          <div className="space-y-1 max-h-[200px] overflow-auto">
+            {(rejectionData?.rejections || state?.last_rejections || []).slice(0, 20).map((r: any) => (
+              <div key={r.fixture_id + r.timestamp} onClick={() => setSelectedRejection(r)} className="p-2 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] active:bg-[var(--bg-tertiary)] cursor-pointer">
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-white font-bold truncate">{r.fixture_label}</span>
+                  <span className={clsx('text-[9px] px-1 py-0.5 rounded-lg border font-bold', r.rejection_code === 'TECHNICAL_FAILURE' ? 'bg-red-900/20 border-red-800/30 text-red-400' : 'bg-yellow-900/20 border-yellow-800/30 text-yellow-400')}>{r.rejection_code}</span>
+                </div>
+                <div className="text-[10px] text-gray-500 truncate mt-0.5">{r.rejection_reason?.slice(0, 80)}</div>
+                <div className="text-[9px] text-gray-600 font-mono mt-0.5">{r.sport} • {new Date(r.timestamp * 1000).toLocaleTimeString()}</div>
+              </div>
+            ))}
+          </div>
+          {selectedRejection && (
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-primary)] p-3">
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-bold text-white truncate">{selectedRejection.fixture_label}</div>
+                <button onClick={() => setSelectedRejection(null)} className="text-[10px] text-gray-500">✕</button>
+              </div>
+              <div className="grid grid-cols-2 gap-2 mt-2 text-[10px]">
+                <div><span className="text-gray-500">STATUS</span><div className="text-red-400 font-bold">{selectedRejection.rejection_code}</div></div>
+                <div><span className="text-gray-500">STAGE</span><div className="text-white">{selectedRejection.rejection_stage}</div></div>
+              </div>
+              <div className="mt-2 text-[11px] text-gray-300">{selectedRejection.rejection_reason}</div>
+              {selectedRejection.pipeline_trace?.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {selectedRejection.pipeline_trace.map((s: any, i: number) => (
+                    <span key={i} className={clsx('text-[9px] px-1.5 py-0.5 rounded-lg border', s.status === 'COMPLETE' ? 'bg-emerald-900/10 border-emerald-800/20 text-emerald-400' : s.status === 'FAILED' ? 'bg-red-900/10 border-red-800/30 text-red-400' : 'bg-gray-800 border-gray-700 text-gray-500')}>{s.stage}:{s.status}</span>
+                  ))}
+                </div>
+              )}
+              <div className="text-[9px] text-gray-600 font-mono mt-2">Model: {selectedRejection.model || '—'} • Prompt: {selectedRejection.prompt_version || '—'}</div>
             </div>
           )}
         </div>
       )}
+
+      {/* Fixture status grid */}
+      {state?.fixtures && state.fixtures.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[10px] tracking-widest text-gray-500 font-bold">FIXTURES ({state.fixtures.length})</div>
+          <div className="grid grid-cols-2 gap-1">
+            {state.fixtures.map((fx: any) => (
+              <div key={fx.fixture_id} className="flex items-center justify-between text-[10px] p-1.5 rounded bg-[var(--bg-secondary)]">
+                <span className="text-gray-400 truncate">{fx.label}</span>
+                <span className={clsx('font-medium ml-1 flex-shrink-0', fx.status === 'COMPLETE' ? 'text-emerald-400' : fx.status === 'FETCHING' ? 'text-blue-400' : fx.status === 'ANALYZING' ? 'text-yellow-400' : fx.status === 'FAILED' ? 'text-red-400' : 'text-gray-600')}>
+                  {fx.status === 'COMPLETE' ? '✓' : fx.status === 'FETCHING' ? '●' : fx.status === 'ANALYZING' ? '◉' : fx.status === 'FAILED' ? '✗' : '○'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Pipeline */}
+      <div>
+        <button onClick={() => setExpandedPipeline(v => !v)} className="w-full flex items-center justify-between py-2 text-[10px] tracking-widest text-gray-500 font-bold">
+          <span>LIVE PIPELINE</span>
+          <span className="text-gray-600">{expandedPipeline ? '▲' : '▼'}</span>
+        </button>
+        {expandedPipeline && (
+          <div className="space-y-1 mt-1">
+            {PIPELINE.map(stage => {
+              const target = state?.current_fixture || state?.pipeline_stages?.[state.pipeline_stages.length - 1]?.fixture_id || ''
+              const info = state?.pipeline_stages?.find((s: any) => s.stage === stage && s.fixture_id === target) || state?.pipeline_stages?.find((s: any) => s.stage === stage)
+              const st = info?.status || 'WAITING'
+              return (
+                <div key={stage} className={clsx('flex items-center gap-2 px-2 py-1.5 rounded-lg text-[10px]', st === 'ACTIVE' && 'bg-emerald-900/20 border border-emerald-800/30', st === 'COMPLETE' && 'bg-emerald-900/10', st === 'FAILED' && 'bg-red-900/10')}>
+                  <span className={clsx('w-4 text-center font-mono', st === 'ACTIVE' ? 'text-emerald-400 animate-pulse' : st === 'COMPLETE' ? 'text-emerald-400' : st === 'FAILED' ? 'text-red-400' : 'text-gray-600')}>{st === 'COMPLETE' ? '✓' : st === 'ACTIVE' ? '●' : st === 'FAILED' ? '✗' : '○'}</span>
+                  <span className={clsx('font-medium', st === 'ACTIVE' ? 'text-emerald-300' : st === 'COMPLETE' ? 'text-emerald-300' : st === 'FAILED' ? 'text-red-300' : 'text-gray-500')}>{stage.replace('_', ' ')}</span>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Events */}
+      <div>
+        <button onClick={() => setExpandedEvents(v => !v)} className="w-full flex items-center justify-between py-2 text-[10px] tracking-widest text-gray-500 font-bold">
+          <span>EVENT STREAM ({state?.events?.length || 0})</span>
+          <span className="text-gray-600">{expandedEvents ? '▲' : '▼'}</span>
+        </button>
+        {expandedEvents && (
+          <div className="space-y-1 mt-1 max-h-[200px] overflow-auto">
+            {(!state?.events || state.events.length === 0) ? <div className="text-[10px] text-gray-600 text-center py-4">No events yet</div> : [...state.events].reverse().map((evt: any, i: number) => (
+              <div key={i} className={clsx('text-[10px] px-2 py-1.5 rounded-lg border', evt.status === 'SUCCESS' ? 'bg-emerald-900/10 border-emerald-800/20' : evt.status === 'ERROR' ? 'bg-red-900/10 border-red-800/20' : evt.status === 'WARNING' ? 'bg-yellow-900/10 border-yellow-800/20' : 'bg-[var(--bg-primary)] border-[var(--border)]')}>
+                <div className="flex items-center gap-1.5">
+                  <span>{CATEGORY_ICONS[evt.category] || '•'}</span>
+                  <span className={clsx('font-bold', evt.status === 'SUCCESS' ? 'text-emerald-400' : evt.status === 'ERROR' ? 'text-red-400' : evt.status === 'WARNING' ? 'text-yellow-400' : 'text-gray-400')}>{evt.category}</span>
+                  <span className="text-gray-500 ml-auto text-[9px]">{new Date(evt.timestamp * 1000).toLocaleTimeString()}</span>
+                </div>
+                <div className="text-gray-400 mt-0.5">{evt.message}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Predictions */}
+      {state?.recent_predictions?.length > 0 && (
+        <div>
+          <div className="text-[10px] tracking-widest text-gray-500 font-bold mb-2">PREDICTIONS ({state.recent_predictions.length})</div>
+          <div className="space-y-2">
+            {state.recent_predictions.map((p: any, i: number) => (
+              <MobilePredictionCard key={i} pred={p} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MobileStat({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <div className="p-2 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] text-center">
+      <div className="text-[8px] text-gray-500 tracking-wider">{label}</div>
+      <div className={clsx('text-sm font-bold mt-0.5', color || 'text-white')}>{value}</div>
     </div>
   )
 }
