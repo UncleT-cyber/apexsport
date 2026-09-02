@@ -25,29 +25,36 @@ def _use_supabase() -> bool:
         return False
 
 def _load() -> dict[str, Any]:
+    # Always read from local file first (written by every save)
+    file_data = {}
+    if SETTINGS_FILE.exists():
+        try:
+            file_data = json.loads(SETTINGS_FILE.read_text())
+        except Exception:
+            pass
+    # Also try Supabase (survives Render deploys)
     if _use_supabase():
         try:
             from database.supabase_client import select_one
             row = select_one("app_settings", {"key": "main"})
             if row and row.get("data"):
-                return row["data"] if isinstance(row["data"], dict) else json.loads(row["data"])
+                data = row["data"]
+                sb_data = data if isinstance(data, dict) else json.loads(data)
+                return {**file_data, **sb_data}
         except Exception as e:
-            print(f"[settings] Supabase load failed, falling back to file: {e}")
-    if SETTINGS_FILE.exists():
-        try:
-            return json.loads(SETTINGS_FILE.read_text())
-        except Exception:
-            return {}
-    return {}
+            print(f"[settings] Supabase load failed (using file): {e}")
+    return file_data
 
 def _save(data: dict[str, Any]) -> None:
+    # Always write to local file (immediate, reliable)
+    SETTINGS_FILE.write_text(json.dumps(data, indent=2, default=str))
+    # Also persist to Supabase (survives Render deploys)
     if _use_supabase():
         try:
             from database.supabase_client import upsert
             upsert("app_settings", {"key": "main", "data": data}, on_conflict="key")
         except Exception as e:
-            print(f"[settings] Supabase save failed, falling back to file: {e}")
-            SETTINGS_FILE.write_text(json.dumps(data, indent=2, default=str))
+            print(f"[settings] Supabase save failed (file still saved): {e}")
     else:
         SETTINGS_FILE.write_text(json.dumps(data, indent=2, default=str))
 

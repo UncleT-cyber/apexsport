@@ -147,22 +147,26 @@ _runtime_lock = threading.Lock()
 
 
 def _load_settings_file() -> dict[str, Any]:
-    # Try Supabase first, fall back to local file
+    # Always read from local file first (written by every save)
+    file_data = {}
+    if SETTINGS_FILE.exists():
+        try:
+            file_data = json.loads(SETTINGS_FILE.read_text())
+        except Exception:
+            pass
+    # Also try Supabase (survives Render deploys)
     try:
         from database.supabase_client import is_configured, select_one
         if is_configured():
             row = select_one("app_settings", {"key": "main"})
             if row and row.get("data"):
                 data = row["data"]
-                return data if isinstance(data, dict) else json.loads(data)
+                sb_data = data if isinstance(data, dict) else json.loads(data)
+                # Merge: Supabase overrides file (Supabase is source of truth across deploys)
+                return {**file_data, **sb_data}
     except Exception:
         pass
-    if SETTINGS_FILE.exists():
-        try:
-            return json.loads(SETTINGS_FILE.read_text())
-        except Exception:
-            return {}
-    return {}
+    return file_data
 
 
 def _build_runtime_settings() -> Settings:
