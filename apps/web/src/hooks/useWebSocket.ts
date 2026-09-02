@@ -11,8 +11,13 @@ export function useWebSocket(onEvent?: (e: any) => void) {
     const connect = () => {
       if (cancelled) return
       const token = localStorage.getItem('apex_token')
+      const apiBase = (import.meta as any).env?.VITE_API_URL || ''
+      let wsHost = location.host
+      if (apiBase) {
+        try { wsHost = new URL(apiBase).host } catch {}
+      }
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const base = `${proto}//${location.host}/ws`
+      const base = `${proto}//${wsHost}/ws`
       const url = token ? `${base}?token=${encodeURIComponent(token)}` : base
       try {
         const ws = new WebSocket(url)
