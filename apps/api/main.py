@@ -257,4 +257,4 @@ async def _log_startup():
             print(f"  - {err}")
     else:
         print("[startup] All modules loaded successfully")
-    print(f"[startup] Registered routes: {[r.path for r in app.routes]}")
+    print(f"[startup] Registered routes: {[getattr(r, 'path', '?') for r in app.routes]}")
