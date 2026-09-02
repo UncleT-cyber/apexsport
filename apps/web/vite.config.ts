@@ -3,6 +3,9 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    chunkSizeWarningLimit: 1000,
+  },
   server: {
     // In dev, proxy to local backend; in production, VITE_API_URL is used directly via authFetch
     proxy: {
