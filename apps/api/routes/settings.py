@@ -17,7 +17,22 @@ def _mask(key: str) -> str:
 def _is_masked(k: str) -> bool:
     return not k or k.startswith('*') or '•' in k
 
+def _use_supabase() -> bool:
+    try:
+        from database.supabase_client import is_configured
+        return is_configured()
+    except Exception:
+        return False
+
 def _load() -> dict[str, Any]:
+    if _use_supabase():
+        try:
+            from database.supabase_client import select_one
+            row = select_one("app_settings", {"key": "main"})
+            if row and row.get("data"):
+                return row["data"] if isinstance(row["data"], dict) else json.loads(row["data"])
+        except Exception as e:
+            print(f"[settings] Supabase load failed, falling back to file: {e}")
     if SETTINGS_FILE.exists():
         try:
             return json.loads(SETTINGS_FILE.read_text())
@@ -26,7 +41,15 @@ def _load() -> dict[str, Any]:
     return {}
 
 def _save(data: dict[str, Any]) -> None:
-    SETTINGS_FILE.write_text(json.dumps(data, indent=2, default=str))
+    if _use_supabase():
+        try:
+            from database.supabase_client import upsert
+            upsert("app_settings", {"key": "main", "data": json.dumps(data, default=str)}, on_conflict="key")
+        except Exception as e:
+            print(f"[settings] Supabase save failed, falling back to file: {e}")
+            SETTINGS_FILE.write_text(json.dumps(data, indent=2, default=str))
+    else:
+        SETTINGS_FILE.write_text(json.dumps(data, indent=2, default=str))
 
 class ProviderKeys(BaseModel):
     api_key: Optional[str] = None
