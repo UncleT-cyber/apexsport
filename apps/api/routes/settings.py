@@ -390,6 +390,23 @@ async def test_provider(provider: str, body: dict = {}):
             key = _get_llm_key(raw, provider)
     if not key:
         return {"status":"error","message": f"{provider} API key not configured — paste key above and SAVE first, then TEST"}
+    # Save key and invalidate runtime so adapter reads the fresh key
+    if body.get("api_key") and not _is_masked(body["api_key"]):
+        if provider in ["sportmonks","api_football","sportradar","the_odds_api"]:
+            raw.setdefault(provider, {})["api_key"] = body["api_key"]
+        else:
+            llm = raw.setdefault("llm", {})
+            cfg = llm.setdefault(provider, {})
+            if isinstance(cfg, dict):
+                cfg["api_key"] = body["api_key"]
+            else:
+                llm[f"{provider}_api_key"] = body["api_key"]
+        _save(raw)
+        try:
+            from core.config.settings import invalidate_runtime
+            invalidate_runtime()
+        except Exception:
+            pass
     # Sports providers: use adapter live check
     if provider in ["sportmonks","api_football","sportradar","the_odds_api"]:
         try:
@@ -397,9 +414,8 @@ async def test_provider(provider: str, body: dict = {}):
             adapter = registry.get(provider)
             if adapter:
                 health = await adapter.test_connection()
-                if not health.configured and key and len(key) >= 8:
-                    return {"status": "ok", "message": f"{provider} key looks valid (mock test) — will be used on next request", "configured": False}
                 return {"status": "ok" if health.is_healthy else "error", "message": health.error_message or f"{provider} reachable ({health.status.value})", "configured": health.configured}
+            return {"status": "error", "message": f"{provider} adapter not registered"}
         except Exception as e:
             return {"status":"error","message":str(e)}
     # LLM providers: test via model fetch (proves key + endpoint)
@@ -409,9 +425,7 @@ async def test_provider(provider: str, body: dict = {}):
             return {"status": "ok", "message": f"Connected. {len(models)} models available.", "model_count": len(models)}
         except Exception as e:
             return {"status":"error","message":str(e)}
-    if len(key) >= 8:
-        return {"status":"ok","message":f"{provider} key looks valid (mock test) — configure live endpoint for real validation"}
-    return {"status":"error","message":"key too short"}
+    return {"status":"error","message":f"{provider} not recognized — cannot validate key"}
 
 @router.get("/risk")
 async def get_risk():
@@ -437,7 +451,7 @@ for _sec in GENERIC_SECTIONS:
 @router.get("/account")
 async def get_account():
     raw = _load()
-    return raw.get("account", {"email":"apex@apexsports.local","username":"apex_user","account_type":"personal","data_mode":"paper"})
+    return raw.get("account", {})
 
 @router.put("/account")
 async def put_account(body: dict):
@@ -451,7 +465,7 @@ async def put_account(body: dict):
 @router.get("/profile")
 async def get_profile():
     raw = _load()
-    return raw.get("profile", {"display_name":"Apex User","username":"apex_user","email":"apex@apexsports.local","bio":"Sports intelligence analyst","timezone":"UTC","language":"en","avatar":"A"})
+    return raw.get("profile", {})
 
 @router.put("/profile")
 async def put_profile(body: dict):

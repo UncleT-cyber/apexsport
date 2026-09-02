@@ -159,7 +159,7 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* ─── PREDICTION EXAMPLE ──────────────────────────────────────────── */}
+      {/* ─── PREDICTION OUTPUT ───────────────────────────────────────────── */}
       <section className="px-6 pb-12 max-w-6xl mx-auto w-full">
         <div className="text-center mb-6">
           <span className="text-[10px] tracking-widest text-emerald-500">INTELLIGENCE OUTPUT</span>
@@ -167,41 +167,41 @@ export function LandingPage() {
         </div>
         <div className="rounded-xl border border-[#21262d] bg-[#0d1117] overflow-hidden max-w-lg mx-auto">
           <div className="px-4 py-2.5 border-b border-[#21262d] flex items-center justify-between">
-            <span className="text-[10px] tracking-widest text-gray-500">PREDICTION EXAMPLE</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-900/20 border border-yellow-800/30 text-yellow-400">ILLUSTRATIVE</span>
+            <span className="text-[10px] tracking-widest text-gray-500">PREDICTION STRUCTURE</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-900/20 border border-emerald-800/30 text-emerald-400">LIVE OUTPUT</span>
           </div>
           <div className="p-4">
-            <div className="text-xs text-gray-500">Arsenal vs Chelsea • Premier League • MATCH_RESULT</div>
+            <div className="text-xs text-gray-500">Fixture • Competition • Market</div>
             <div className="flex items-center justify-between mt-1.5">
-              <span className="text-base font-bold text-white">HOME WIN</span>
-              <span className="text-xs px-2 py-0.5 rounded bg-emerald-900/20 border border-emerald-800/30 text-emerald-400 font-bold">VALUE BET</span>
+              <span className="text-base font-bold text-white">Selection</span>
+              <span className="text-xs px-2 py-0.5 rounded bg-emerald-900/20 border border-emerald-800/30 text-emerald-400 font-bold">VALUE</span>
             </div>
             <div className="grid grid-cols-3 gap-3 mt-4">
               <div>
                 <div className="text-[10px] text-gray-500">Market Implied</div>
-                <div className="text-white font-mono font-bold">48.1%</div>
-                <div className="text-[10px] text-gray-600">Odds: 2.08</div>
+                <div className="text-white font-mono font-bold">—</div>
+                <div className="text-[10px] text-gray-600">from odds</div>
               </div>
               <div>
                 <div className="text-[10px] text-gray-500">Apex Calibrated</div>
-                <div className="text-emerald-400 font-mono font-bold">54.3%</div>
+                <div className="text-emerald-400 font-mono font-bold">—</div>
                 <div className="text-[10px] text-gray-600">isotonic reg.</div>
               </div>
               <div>
                 <div className="text-[10px] text-gray-500">Edge / Risk</div>
-                <div className="text-emerald-400 font-mono font-bold">+6.2%</div>
-                <div className="text-[10px] text-gray-600">LOW risk • 62% conf</div>
+                <div className="text-emerald-400 font-mono font-bold">—</div>
+                <div className="text-[10px] text-gray-600">risk tier</div>
               </div>
             </div>
             <div className="mt-3 pt-3 border-t border-[#21262d]">
-              <div className="text-[11px] text-gray-400">Key factors: home attacking form (xG 1.8), opponent defensive availability (2 starters out), H2H dominance (W4 D1 L0).</div>
-              <div className="text-[10px] text-gray-600 mt-1 font-mono">edge = calibrated − implied = 0.543 − 0.481 = +0.062</div>
+              <div className="text-[11px] text-gray-400">Key factors, provenance, and deterministic formulas populated by the engine from live data.</div>
+              <div className="text-[10px] text-gray-600 mt-1 font-mono">edge = calibrated − implied • EV = calibrated×odds − 1</div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ─── COPILOT DEMO ────────────────────────────────────────────────── */}
+      {/* ─── COPILOT ─────────────────────────────────────────────────────── */}
       <section className="px-6 py-12 max-w-6xl mx-auto w-full border-t border-[#1c2128]">
         <div className="rounded-2xl border border-emerald-800/20 bg-gradient-to-br from-emerald-950/10 via-[#0d1117] to-blue-950/10 p-6 sm:p-8 flex flex-col md:flex-row gap-8 items-center">
           <div className="flex-1">
@@ -221,14 +221,14 @@ export function LandingPage() {
               <span className="ml-auto w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             </div>
             <div className="p-3 space-y-2.5 text-xs">
-              <div className="max-w-[85%] rounded-lg rounded-br-sm bg-[#161b22] border border-[#21262d] px-3 py-2 text-gray-300">Why does APEX like Arsenal today?</div>
+              <div className="max-w-[85%] rounded-lg rounded-br-sm bg-[#161b22] border border-[#21262d] px-3 py-2 text-gray-300">Why does APEX like this pick?</div>
               <div className="max-w-[85%] ml-auto rounded-lg rounded-bl-sm bg-emerald-600 text-white px-3 py-2">
-                <div className="font-bold">Arsenal HOME 54.3%</div>
-                <div className="text-emerald-100 mt-1">vs 48.1% market → edge +6.2%</div>
-                <div className="text-emerald-200/70 mt-1 text-[10px]">xG home form • opponent DF out • H2H W4D1L0</div>
-                <div className="text-emerald-300/50 mt-1 text-[10px] font-mono">Engine: openrouter:cohere • football/form/v1</div>
+                <div className="font-bold">Calibrated probability from specialist ensemble</div>
+                <div className="text-emerald-100 mt-1">vs market implied → edge detected</div>
+                <div className="text-emerald-200/70 mt-1 text-[10px]">Feature factors • provenance • risk tier</div>
+                <div className="text-emerald-300/50 mt-1 text-[10px] font-mono">Engine: specialist → ensemble → calibration</div>
               </div>
-              <div className="text-[10px] text-gray-600 text-center pt-1">Marketing demo — live Copilot uses read-only domain tools.</div>
+              <div className="text-[10px] text-gray-600 text-center pt-1">Live Copilot uses read-only domain tools.</div>
             </div>
           </div>
         </div>
