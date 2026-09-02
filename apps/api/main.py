@@ -19,10 +19,15 @@ from sportsbooks.registry import registry as sportsbook_registry
 
 app = FastAPI(title="Apex Sports", version="0.1.0")
 
-settings = get_settings()
+import os
+_cors_raw = os.environ.get("APEXSPORT_CORS_ORIGINS", "")
+_cors_list = [o.strip() for o in _cors_raw.split(",") if o.strip()] if _cors_raw else []
+if not _cors_list:
+    _cors_list = ["http://localhost:5173", "http://localhost:5174", "http://localhost:3000", "https://apexsport.onrender.com", "https://apexsports-api.onrender.com"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=_cors_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
