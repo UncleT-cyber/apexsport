@@ -390,41 +390,66 @@ async def test_provider(provider: str, body: dict = {}):
             key = _get_llm_key(raw, provider)
     if not key:
         return {"status":"error","message": f"{provider} API key not configured — paste key above and SAVE first, then TEST"}
-    # Save key and invalidate runtime so adapter reads the fresh key
-    if body.get("api_key") and not _is_masked(body["api_key"]):
-        if provider in ["sportmonks","api_football","sportradar","the_odds_api"]:
-            raw.setdefault(provider, {})["api_key"] = body["api_key"]
-        else:
-            llm = raw.setdefault("llm", {})
-            cfg = llm.setdefault(provider, {})
-            if isinstance(cfg, dict):
-                cfg["api_key"] = body["api_key"]
-            else:
-                llm[f"{provider}_api_key"] = body["api_key"]
-        _save(raw)
+    # Sports providers: test directly against real API (no adapter cache dependency)
+    if provider == "sportmonks":
+        import httpx
+        base = (raw.get("sportmonks",{}).get("base_url") or "https://api.sportmonks.com/v3").rstrip("/")
         try:
-            from core.config.settings import invalidate_runtime
-            invalidate_runtime()
-        except Exception:
-            pass
-    # Sports providers: use adapter live check
-    if provider in ["sportmonks","api_football","sportradar","the_odds_api"]:
-        try:
-            from providers.registry.provider_registry import registry
-            adapter = registry.get(provider)
-            if adapter:
-                health = await adapter.test_connection()
-                return {"status": "ok" if health.is_healthy else "error", "message": health.error_message or f"{provider} reachable ({health.status.value})", "configured": health.configured}
-            return {"status": "error", "message": f"{provider} adapter not registered"}
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(f"{base}/football/leagues", params={"api_token": key, "per_page": 1})
+                if resp.status_code == 200:
+                    return {"status": "ok", "message": "Sportmonks connected — API key valid", "configured": True}
+                if resp.status_code in (401, 403):
+                    return {"status": "error", "message": f"Auth failed ({resp.status_code}) — check key at my.sportmonks.com", "configured": False}
+                return {"status": "error", "message": f"HTTP {resp.status_code}: {resp.text[:120]}", "configured": False}
         except Exception as e:
-            return {"status":"error","message":str(e)}
+            return {"status": "error", "message": str(e), "configured": False}
+    if provider == "api_football":
+        import httpx
+        base = (raw.get("api_football",{}).get("base_url") or "https://v3.football.api-sports.io").rstrip("/")
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(f"{base}/leagues", headers={"x-apisports-key": key}, params={"type": "league"})
+                if resp.status_code == 200:
+                    return {"status": "ok", "message": "API-Football connected — API key valid", "configured": True}
+                if resp.status_code in (401, 403):
+                    return {"status": "error", "message": f"Auth failed ({resp.status_code}) — check key at api-football.com", "configured": False}
+                return {"status": "error", "message": f"HTTP {resp.status_code}: {resp.text[:120]}", "configured": False}
+        except Exception as e:
+            return {"status": "error", "message": str(e), "configured": False}
+    if provider == "sportradar":
+        import httpx
+        base = (raw.get("sportradar",{}).get("base_url") or "https://api.sportradar.com").rstrip("/")
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(f"{base}/soccer/trial/v4/en/leagues.json", params={"api_key": key})
+                if resp.status_code == 200:
+                    return {"status": "ok", "message": "Sportradar connected — API key valid", "configured": True}
+                if resp.status_code in (401, 403):
+                    return {"status": "error", "message": f"Auth failed ({resp.status_code}) — check key at sportradar.com", "configured": False}
+                return {"status": "error", "message": f"HTTP {resp.status_code}: {resp.text[:120]}", "configured": False}
+        except Exception as e:
+            return {"status": "error", "message": str(e), "configured": False}
+    if provider == "the_odds_api":
+        import httpx
+        base = (raw.get("the_odds_api",{}).get("base_url") or "https://api.the-odds-api.com/v4").rstrip("/")
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(f"{base}/sports", params={"apiKey": key})
+                if resp.status_code == 200:
+                    return {"status": "ok", "message": "The Odds API connected — API key valid", "configured": True}
+                if resp.status_code in (401, 403):
+                    return {"status": "error", "message": f"Auth failed ({resp.status_code}) — check key at the-odds-api.com", "configured": False}
+                return {"status": "error", "message": f"HTTP {resp.status_code}: {resp.text[:120]}", "configured": False}
+        except Exception as e:
+            return {"status": "error", "message": str(e), "configured": False}
     # LLM providers: test via model fetch (proves key + endpoint)
     if provider in MODEL_FETCHERS:
         try:
             models = await MODEL_FETCHERS[provider](key)
             return {"status": "ok", "message": f"Connected. {len(models)} models available.", "model_count": len(models)}
         except Exception as e:
-            return {"status":"error","message":str(e)}
+            return {"status": "error","message":str(e)}
     return {"status":"error","message":f"{provider} not recognized — cannot validate key"}
 
 @router.get("/risk")
