@@ -44,7 +44,7 @@ def _save(data: dict[str, Any]) -> None:
     if _use_supabase():
         try:
             from database.supabase_client import upsert
-            upsert("app_settings", {"key": "main", "data": json.dumps(data, default=str)}, on_conflict="key")
+            upsert("app_settings", {"key": "main", "data": data}, on_conflict="key")
         except Exception as e:
             print(f"[settings] Supabase save failed, falling back to file: {e}")
             SETTINGS_FILE.write_text(json.dumps(data, indent=2, default=str))
