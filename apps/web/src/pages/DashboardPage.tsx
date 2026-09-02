@@ -47,7 +47,7 @@ export function DashboardPage() {
   const [isDragging, setIsDragging] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const { data: health } = usePolling(() => fetch('/health').then(r => r.json().catch(() => null)), 15000)
+  const { data: health } = usePolling(() => authFetch('/health').then(r => r.json().catch(() => null)), 15000)
   const { data: scanner } = usePolling(() => authFetch(`/api/scanner/state?sport=${sport}`).then(r => r.json().catch(() => null)), 3000)
   const { data: fixturesData } = usePolling(() => authFetch(`/api/fixtures?sport=${sport}`).then(r => r.json().catch(() => null)), 10000)
   const { data: slipsOdds } = usePolling(() => authFetch(`/api/slips/odds?sport=${sport}`).then(r => r.json().catch(() => null)), 10000)

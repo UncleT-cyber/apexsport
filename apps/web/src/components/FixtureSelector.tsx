@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import clsx from 'clsx'
 import { Search, ChevronDown } from 'lucide-react'
+import { authFetch } from '../services/auth'
 
 interface Fixture {
   id: string
@@ -22,7 +23,7 @@ export function FixtureSelector({ value, onSelect, sport }: { value: string; onS
   const fetchFixtures = useCallback(async () => {
     setLoading(true)
     try {
-      const r = await fetch(`/api/fixtures?sport=${sport}`)
+      const r = await authFetch(`/api/fixtures?sport=${sport}`)
       const j = await r.json()
       setFixtures(j.fixtures || [])
     } catch {}

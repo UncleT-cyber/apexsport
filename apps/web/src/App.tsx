@@ -64,7 +64,7 @@ function DesktopShell() {
   const [page, setPage] = useState<AppPage>('dashboard')
   const [collapsed, setCollapsed] = useState(false)
   const { connected: wsConnected } = useWebSocket()
-  const { data: health } = usePolling(() => fetch('/health').then(r=>r.json().catch(()=>null)), 5000)
+  const { data: health } = usePolling(() => authFetch('/health').then(r=>r.json().catch(()=>null)), 5000)
   const connected = wsConnected || !!health
   const { count: slipCount } = useSlipCart()
   const { user, logout, isAdmin } = useAuth()
