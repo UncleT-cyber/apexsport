@@ -39,9 +39,16 @@ async def global_exception_handler(request: Request, exc: Exception):
     import traceback as _tb
     print(f"[error] Unhandled: {request.method} {request.url.path}: {exc}")
     _tb.print_exc()
+    origin = request.headers.get("origin", "")
+    headers = {}
+    if origin:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+        headers["Access-Control-Expose-Headers"] = "*"
     return ORJSONResponse(
         status_code=500,
         content={"detail": "Internal server error", "error": str(exc)[:200]},
+        headers=headers,
     )
 
 @app.exception_handler(500)
