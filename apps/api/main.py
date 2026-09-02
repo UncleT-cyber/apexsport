@@ -23,7 +23,7 @@ import os
 _cors_raw = os.environ.get("APEXSPORT_CORS_ORIGINS", "")
 _cors_list = [o.strip() for o in _cors_raw.split(",") if o.strip()] if _cors_raw else []
 if not _cors_list:
-    _cors_list = ["http://localhost:5173", "http://localhost:5174", "http://localhost:3000", "https://apexsport.onrender.com", "https://apexsports-api.onrender.com"]
+    _cors_list = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
@@ -34,59 +34,100 @@ app.add_middleware(
 )
 
 # Register providers
-registry.register(SportmonksAdapter(), priority=10)
-registry.register(ApiFootballAdapter(), priority=20)
-registry.register(SportradarAdapter(), priority=25)
-registry.register(TheOddsApiAdapter(), priority=30)
+try:
+    registry.register(SportmonksAdapter(), priority=10)
+    registry.register(ApiFootballAdapter(), priority=20)
+    registry.register(SportradarAdapter(), priority=25)
+    registry.register(TheOddsApiAdapter(), priority=30)
+except Exception as e:
+    print(f"[startup] provider registration failed: {e}")
 
 # Register sportsbooks (generic adapter pattern — no private API reverse-engineering)
-from sportsbooks.base import SportsbookAdapter as _SBA
-class _DraftKingsAdapter(_SBA):
-    @property
-    def name(self) -> str: return "draftkings"
-class _FanDuelAdapter(_SBA):
-    @property
-    def name(self) -> str: return "fanduel"
-for _sb in [SportyBetAdapter(), Bet9jaAdapter(), BetwayAdapter(), GenericAdapter(), _DraftKingsAdapter(), _FanDuelAdapter()]:
-    sportsbook_registry.register(_sb)
+try:
+    from sportsbooks.base import SportsbookAdapter as _SBA
+    class _DraftKingsAdapter(_SBA):
+        @property
+        def name(self) -> str: return "draftkings"
+    class _FanDuelAdapter(_SBA):
+        @property
+        def name(self) -> str: return "fanduel"
+    for _sb in [SportyBetAdapter(), Bet9jaAdapter(), BetwayAdapter(), GenericAdapter(), _DraftKingsAdapter(), _FanDuelAdapter()]:
+        sportsbook_registry.register(_sb)
+except Exception as e:
+    print(f"[startup] sportsbook registration failed: {e}")
 
 from apps.api.routes import scanner as scanner_routes, fixtures as fixtures_routes, providers as providers_routes, slips as slips_routes, health as health_routes
 from apps.api.routes.admin import router as admin_router
-from apps.api.routes.analytics import router as analytics_router
-from apps.api.routes.scheduling import router as scheduling_router
-from apps.api.routes.news import router as news_router
-from apps.api.routes.live import router as live_router
-from apps.api.routes.settings import router as settings_router
-from apps.api.routes.backtesting import router as backtesting_router
-from apps.api.routes.predictions import router as predictions_router
-from apps.api.routes.brain import router as brain_router
-from apps.api.routes.telemetry import router as telemetry_router
-from apps.api.routes.copilot import router as copilot_router
-from apps.api.routes.verify import router as verify_router
 from apps.api.routes.auth import router as auth_router
+
+# Optional routes — may fail if dependencies missing
+try:
+    from apps.api.routes.analytics import router as analytics_router
+except Exception:
+    analytics_router = None
+try:
+    from apps.api.routes.scheduling import router as scheduling_router
+except Exception:
+    scheduling_router = None
+try:
+    from apps.api.routes.news import router as news_router
+except Exception:
+    news_router = None
+try:
+    from apps.api.routes.live import router as live_router
+except Exception:
+    live_router = None
+try:
+    from apps.api.routes.settings import router as settings_router
+except Exception:
+    settings_router = None
+try:
+    from apps.api.routes.backtesting import router as backtesting_router
+except Exception:
+    backtesting_router = None
+try:
+    from apps.api.routes.predictions import router as predictions_router
+except Exception:
+    predictions_router = None
+try:
+    from apps.api.routes.brain import router as brain_router
+except Exception:
+    brain_router = None
+try:
+    from apps.api.routes.telemetry import router as telemetry_router
+except Exception:
+    telemetry_router = None
+try:
+    from apps.api.routes.copilot import router as copilot_router
+except Exception:
+    copilot_router = None
+try:
+    from apps.api.routes.verify import router as verify_router
+except Exception:
+    verify_router = None
 from apps.api.dependencies.auth import get_current_user, get_current_admin
 
 app.include_router(auth_router)
 app.include_router(health_routes.router)
 # Public for landing page — real fixtures/live/news via provider abstraction, no auth required
 app.include_router(fixtures_routes.router)
-app.include_router(live_router)
-app.include_router(news_router)
+if live_router: app.include_router(live_router)
+if news_router: app.include_router(news_router)
 # Protected — require JWT, MFA verified, ACTIVE status
 from fastapi import Depends
 app.include_router(scanner_routes.router, dependencies=[Depends(get_current_user)])
 app.include_router(providers_routes.router, dependencies=[Depends(get_current_user)])
 app.include_router(slips_routes.router, dependencies=[Depends(get_current_user)])
 app.include_router(admin_router, dependencies=[Depends(get_current_admin)])
-app.include_router(analytics_router, dependencies=[Depends(get_current_user)])
-app.include_router(scheduling_router, dependencies=[Depends(get_current_user)])
-app.include_router(settings_router, dependencies=[Depends(get_current_user)])
-app.include_router(backtesting_router, dependencies=[Depends(get_current_user)])
-app.include_router(predictions_router, dependencies=[Depends(get_current_user)])
-app.include_router(brain_router, dependencies=[Depends(get_current_user)])
-app.include_router(telemetry_router, dependencies=[Depends(get_current_user)])
-app.include_router(copilot_router, dependencies=[Depends(get_current_user)])
-app.include_router(verify_router, dependencies=[Depends(get_current_user)])
+if analytics_router: app.include_router(analytics_router, dependencies=[Depends(get_current_user)])
+if scheduling_router: app.include_router(scheduling_router, dependencies=[Depends(get_current_user)])
+if settings_router: app.include_router(settings_router, dependencies=[Depends(get_current_user)])
+if backtesting_router: app.include_router(backtesting_router, dependencies=[Depends(get_current_user)])
+if predictions_router: app.include_router(predictions_router, dependencies=[Depends(get_current_user)])
+if brain_router: app.include_router(brain_router, dependencies=[Depends(get_current_user)])
+if telemetry_router: app.include_router(telemetry_router, dependencies=[Depends(get_current_user)])
+if copilot_router: app.include_router(copilot_router, dependencies=[Depends(get_current_user)])
+if verify_router: app.include_router(verify_router, dependencies=[Depends(get_current_user)])
 
 # Bootstrap auth — ensure at least one ADMIN invite exists for controlled testing
 @app.on_event("startup")
