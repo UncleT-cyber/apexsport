@@ -36,7 +36,7 @@ services:
       - key: HUGGINGFACE_API_KEY
         sync: false
       - key: APEXSPORT_CORS_ORIGINS
-        value: https://apexsport.onrender.com,https://apexsports-api.onrender.com
+        value: https://apexsports.onrender.com,https://apexsports-api.onrender.com
 
   - type: web
     name: apexsports-web

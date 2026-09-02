@@ -128,7 +128,7 @@ class Settings(BaseSettings):
     llm: LLMSettings = LLMSettings()
     risk: RiskSettings = RiskSettings()
     scanner: ScannerSettings = ScannerSettings()
-    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:5174", "http://localhost:3000", "https://apexsport.onrender.com", "https://apexsports-api.onrender.com"]
+    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:5174", "http://localhost:3000", "https://apexsports.onrender.com", "https://apexsports-api.onrender.com"]
     frontend_url: str = ""  # Render Static Site URL for CORS (e.g., https://apexsports.onrender.com)
     api_url: str = ""  # Backend URL for frontend (VITE_API_URL, e.g., https://api.apexsports.onrender.com)
 
