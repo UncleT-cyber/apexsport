@@ -52,14 +52,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const u = await r.json()
         setUser(u)
         setToken(t)
-      } else {
+      } else if (r.status === 401 || r.status === 403) {
         localStorage.removeItem('apex_token')
         setUser(null)
         setToken(null)
       }
     } catch {
-      setUser(null)
-      setToken(null)
+      // Network error / API sleeping — keep token, user stays "logged in"
     } finally {
       setLoading(false)
     }
