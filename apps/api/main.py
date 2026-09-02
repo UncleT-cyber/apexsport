@@ -10,20 +10,10 @@ from fastapi.responses import JSONResponse
 
 app = FastAPI(title="Apex Sports", version="0.1.0")
 
-# CORS — ALWAYS allow all origins as fallback, never block startup
-_cors_raw = os.environ.get("APEXSPORT_CORS_ORIGINS", "")
-_cors_list = [o.strip() for o in _cors_raw.split(",") if o.strip()] if _cors_raw else []
-# When credentials are used, must echo specific origin, not *
-# Always include the known frontend origin
-_ALWAYS_ALLOW = ["https://apexsport.onrender.com", "https://apexsports-api.onrender.com",
-                 "http://localhost:5173", "http://localhost:5174", "http://localhost:3000"]
-for _o in _ALWAYS_ALLOW:
-    if _o not in _cors_list:
-        _cors_list.append(_o)
-
+# CORS — use * with allow_credentials=True; Starlette echoes back the specific origin
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_list,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -39,6 +29,24 @@ async def health():
 @app.get("/")
 async def root():
     return {"status": "ok", "service": "apexsports-api"}
+
+# Global exception handler — guarantees CORS headers even on500s
+from fastapi import Request
+from fastapi.responses import ORJSONResponse
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import traceback as _tb
+    print(f"[error] Unhandled: {request.method} {request.url.path}: {exc}")
+    _tb.print_exc()
+    return ORJSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error", "error": str(exc)[:200]},
+    )
+
+@app.exception_handler(500)
+async def err500(request: Request, exc: Exception):
+    return await global_exception_handler(request, exc)
 
 # ── Deferred imports — wrapped in try/except so app ALWAYS starts ─────────────
 _startup_errors = []

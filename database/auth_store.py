@@ -7,10 +7,12 @@ No hardcoded admins — role stored persistently.
 
 When SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY are set → Supabase.
 Otherwise → falls back to local JSON files (development only).
+If Supabase query fails for any reason → falls back to JSON.
 """
 from __future__ import annotations
 import json
 import uuid
+import traceback
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
@@ -51,25 +53,34 @@ def _load_resets() -> Dict[str, dict]:
 def _save_resets(data: Dict[str, dict]) -> None:
     RESET_FILE.write_text(json.dumps(data, indent=2))
 
-# ─── Public API ─────────────────────────────────────────────────────────────
+# ─── Public API — every Supabase call wrapped with JSON fallback ─────────────
 
 def list_users() -> list[dict]:
     if _use_supabase():
-        from database.supabase_client import select
-        return select("users", order="created_at.desc")
+        try:
+            from database.supabase_client import select
+            return select("users", order="created_at.desc")
+        except Exception as e:
+            print(f"[auth_store] Supabase list_users failed, falling back to JSON: {e}")
     return list(_load_users().values())
 
 def get_user_by_id(uid: str) -> Optional[dict]:
     if _use_supabase():
-        from database.supabase_client import select_one
-        return select_one("users", {"id": uid})
+        try:
+            from database.supabase_client import select_one
+            return select_one("users", {"id": uid})
+        except Exception as e:
+            print(f"[auth_store] Supabase get_user_by_id failed, falling back to JSON: {e}")
     return _load_users().get(uid)
 
 def get_user_by_email(email: str) -> Optional[dict]:
     email = email.lower().strip()
     if _use_supabase():
-        from database.supabase_client import select_one
-        return select_one("users", {"email": email})
+        try:
+            from database.supabase_client import select_one
+            return select_one("users", {"email": email})
+        except Exception as e:
+            print(f"[auth_store] Supabase get_user_by_email failed, falling back to JSON: {e}")
     for u in _load_users().values():
         if u.get("email", "").lower() == email:
             return u
@@ -77,8 +88,11 @@ def get_user_by_email(email: str) -> Optional[dict]:
 
 def upsert_user(user: dict) -> dict:
     if _use_supabase():
-        from database.supabase_client import upsert
-        return upsert("users", user)
+        try:
+            from database.supabase_client import upsert
+            return upsert("users", user)
+        except Exception as e:
+            print(f"[auth_store] Supabase upsert_user failed, falling back to JSON: {e}")
     data = _load_users()
     data[user["id"]] = user
     _save_users(data)
@@ -86,9 +100,12 @@ def upsert_user(user: dict) -> dict:
 
 def delete_user(uid: str) -> bool:
     if _use_supabase():
-        from database.supabase_client import delete
-        delete("users", {"id": uid})
-        return True
+        try:
+            from database.supabase_client import delete
+            delete("users", {"id": uid})
+            return True
+        except Exception as e:
+            print(f"[auth_store] Supabase delete_user failed, falling back to JSON: {e}")
     data = _load_users()
     if uid in data:
         del data[uid]
@@ -116,10 +133,13 @@ def create_user(email: str, role: str = "USER", status: str = "INVITED", passwor
 
 def update_user(uid: str, patch: dict) -> Optional[dict]:
     if _use_supabase():
-        from database.supabase_client import update
-        patch["updated_at"] = datetime.now(timezone.utc).isoformat()
-        result = update("users", {"id": uid}, patch)
-        return result[0] if result else None
+        try:
+            from database.supabase_client import update
+            patch["updated_at"] = datetime.now(timezone.utc).isoformat()
+            result = update("users", {"id": uid}, patch)
+            return result[0] if result else None
+        except Exception as e:
+            print(f"[auth_store] Supabase update_user failed, falling back to JSON: {e}")
     data = _load_users()
     if uid not in data:
         return None
@@ -140,8 +160,14 @@ def create_reset_token(email: str) -> str:
         "expires_at": (now + timedelta(hours=2)).isoformat(),
     }
     if _use_supabase():
-        from database.supabase_client import insert
-        insert("reset_tokens", record)
+        try:
+            from database.supabase_client import insert
+            insert("reset_tokens", record)
+        except Exception as e:
+            print(f"[auth_store] Supabase create_reset_token failed, falling back to JSON: {e}")
+            data = _load_resets()
+            data[token] = record
+            _save_resets(data)
     else:
         data = _load_resets()
         data[token] = record
@@ -150,20 +176,23 @@ def create_reset_token(email: str) -> str:
 
 def consume_reset_token(token: str) -> Optional[str]:
     if _use_supabase():
-        from database.supabase_client import select_one, delete
-        rec = select_one("reset_tokens", {"token": token})
-        if not rec:
-            return None
         try:
-            exp = datetime.fromisoformat(rec["expires_at"].replace("Z", "+00:00"))
-            if datetime.now(timezone.utc) > exp:
-                delete("reset_tokens", {"token": token})
+            from database.supabase_client import select_one, delete
+            rec = select_one("reset_tokens", {"token": token})
+            if not rec:
                 return None
-        except Exception:
-            pass
-        email = rec["email"]
-        delete("reset_tokens", {"token": token})
-        return email
+            try:
+                exp = datetime.fromisoformat(rec["expires_at"].replace("Z", "+00:00"))
+                if datetime.now(timezone.utc) > exp:
+                    delete("reset_tokens", {"token": token})
+                    return None
+            except Exception:
+                pass
+            email = rec["email"]
+            delete("reset_tokens", {"token": token})
+            return email
+        except Exception as e:
+            print(f"[auth_store] Supabase consume_reset_token failed, falling back to JSON: {e}")
     data = _load_resets()
     rec = data.get(token)
     if not rec:
@@ -183,8 +212,11 @@ def consume_reset_token(token: str) -> Optional[str]:
 
 def peek_reset_token(token: str) -> Optional[dict]:
     if _use_supabase():
-        from database.supabase_client import select_one
-        return select_one("reset_tokens", {"token": token})
+        try:
+            from database.supabase_client import select_one
+            return select_one("reset_tokens", {"token": token})
+        except Exception as e:
+            print(f"[auth_store] Supabase peek_reset_token failed, falling back to JSON: {e}")
     return _load_resets().get(token)
 
 # ─── Bootstrap ──────────────────────────────────────────────────────────────
